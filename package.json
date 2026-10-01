@@ -15,7 +15,6 @@
     "firebase": "^12.18.0",
     "firebase-admin": "^10.3.0",
     "jsonwebtoken": "^9.0.3",
-    "mongodb-memory-server": "^11.2.0",
     "mongoose": "^9.9.5",
     "openapi": "^1.0.0",
     "picomatch": "^4.0.7",
