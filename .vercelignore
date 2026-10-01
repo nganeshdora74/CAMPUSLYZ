@@ -1,0 +1,8 @@
+node_modules
+studyapp
+.expo
+dataconnect
+functions
+.git
+.env
+.env.local

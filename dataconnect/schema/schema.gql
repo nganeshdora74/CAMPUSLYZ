@@ -1,0 +1,37 @@
+type User @table {
+  email: String!
+  role: String!
+  name: String!
+  phoneNumber: String
+  profilePictureUrl: String
+}
+
+type Course @table {
+  courseCode: String!
+  title: String!
+  instructorName: String!
+  creditHours: Int
+  description: String
+}
+
+type Enrollment @table {
+  student: User!
+  course: Course!
+  semester: String!
+  grade: String
+}
+
+type Announcement @table {
+  title: String!
+  content: String!
+  author: User!
+  createdAt: Timestamp!
+  departmentTag: String
+}
+
+type Notification @table {
+  user: User!
+  message: String!
+  isRead: Boolean!
+  createdAt: Timestamp!
+}

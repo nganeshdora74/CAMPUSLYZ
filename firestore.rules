@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper to check if current user is teacher or admin
+    function isTeacherOrAdmin() {
+      return request.auth != null && (
+        request.auth.token.email.matches('.*admin.*') ||
+        request.auth.token.email.matches('.*teacher.*') ||
+        request.auth.token.email.matches('.*faculty.*') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher', 'admin'] ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isTeacher == true))
+      );
+    }
+
+    // Attendance records and logs: readable by authenticated users, but only teachers/admins can create, update, or delete
+    match /attendance/{attendanceId} {
+      allow read: if request.auth != null;
+      allow write: if isTeacherOrAdmin();
+    }
+
+    match /attendance_logs/{logId} {
+      allow read: if request.auth != null;
+      allow write: if isTeacherOrAdmin();
+    }
+
+    // Default: allow authenticated users to read and write other collections
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

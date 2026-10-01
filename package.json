@@ -1,0 +1,38 @@
+{
+  "dependencies": {
+    "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",
+    "@expo/cli": "^57.0.22",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "expo": "^57.0.20",
+    "expo-constants": "~57.0.17",
+    "expo-image-picker": "~57.0.16",
+    "expo-linking": "~57.0.9",
+    "expo-router": "~57.0.19",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "firebase": "^12.18.0",
+    "firebase-admin": "^10.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb-memory-server": "^11.2.0",
+    "mongoose": "^9.9.5",
+    "openapi": "^1.0.0",
+    "picomatch": "^4.0.7",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.4",
+    "typescript": "~6.0.3"
+  },
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "npm --prefix studyapp run dev",
+    "dev:frontend": "npm --prefix studyapp run dev",
+    "dev:backend": "npm --prefix backend run dev"
+  }
+}

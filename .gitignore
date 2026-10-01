@@ -1,0 +1,102 @@
+# ============================================================
+# Dependencies
+# ============================================================
+node_modules/
+*/node_modules/
+**/node_modules/
+
+# ============================================================
+# Environment Variables & Secrets (NEVER COMMIT SENSITIVE KEYS)
+# ============================================================
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+*.env
+studyapp/.env
+studyapp/.env.*
+!studyapp/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# ============================================================
+# Expo & React Native Builds
+# ============================================================
+.expo/
+**/.expo/
+dist/
+**/dist/
+web-build/
+**/web-build/
+expo-env.d.ts
+**/.metro-health-check*
+
+# ============================================================
+# Native Builds & Signing Keys
+# ============================================================
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.keystore
+/ios/
+/android/
+studyapp/ios/
+studyapp/android/
+
+# ============================================================
+# Logs & Debug
+# ============================================================
+npm-debug.*
+npm-debug.log*
+yarn-debug.*
+yarn-debug.log*
+yarn-error.*
+yarn-error.log*
+*.log
+
+# ============================================================
+# Operating System Files
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# IDE & Editor Files
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ============================================================
+# Vercel Deployment Cache
+# ============================================================
+.vercel/
+**/.vercel/
+
+# ============================================================
+# TypeScript & Build Cache
+# ============================================================
+*.tsbuildinfo
+.turbo/
+coverage/
+.nyc_output/

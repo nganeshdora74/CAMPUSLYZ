@@ -1,0 +1,27 @@
+mutation CreateSeedData @transaction {
+  user_insertMany(data: [
+    { id: "00000000-0000-0000-0000-000000000001", email: "alice@university.edu", role: "student", name: "Alice Student" },
+    { id: "00000000-0000-0000-0000-000000000002", email: "bob@university.edu", role: "student", name: "Bob Student" },
+    { id: "00000000-0000-0000-0000-000000000003", email: "prof@university.edu", role: "instructor", name: "Dr. Prof" }
+  ])
+  
+  course_insertMany(data: [
+    { id: "10000000-0000-0000-0000-000000000001", courseCode: "CS101", title: "Intro to CS", instructorName: "Dr. Prof", creditHours: 3 },
+    { id: "10000000-0000-0000-0000-000000000002", courseCode: "MATH202", title: "Calculus II", instructorName: "Dr. Prof", creditHours: 4 }
+  ])
+  
+  enrollment_insertMany(data: [
+    { studentId: "00000000-0000-0000-0000-000000000001", courseId: "10000000-0000-0000-0000-000000000001", semester: "Fall2024", grade: "A" },
+    { studentId: "00000000-0000-0000-0000-000000000002", courseId: "10000000-0000-0000-0000-000000000001", semester: "Fall2024", grade: "B" }
+  ])
+  
+  announcement_insertMany(data: [
+    { title: "Midterm Update", content: "Midterms are next week.", authorId: "00000000-0000-0000-0000-000000000003", createdAt: "2024-01-01T12:00:00Z" },
+    { title: "Lab Cancelled", content: "Lab 3 is cancelled.", authorId: "00000000-0000-0000-0000-000000000003", createdAt: "2024-01-02T12:00:00Z" }
+  ])
+  
+  notification_insertMany(data: [
+    { userId: "00000000-0000-0000-0000-000000000001", message: "You were enrolled in CS101", isRead: false, createdAt: "2024-01-01T12:00:00Z" },
+    { userId: "00000000-0000-0000-0000-000000000002", message: "You were enrolled in CS101", isRead: true, createdAt: "2024-01-01T12:00:00Z" }
+  ])
+}

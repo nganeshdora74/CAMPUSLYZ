@@ -1,0 +1,150 @@
+mutation CreateUser {
+  user_insert(data: {
+    id_expr: "auth.uid",
+    email: "user@example.com",
+    role: "student",
+    name: "John Doe"
+  })
+}
+
+mutation UpdateUser($name: String!) @auth(level: USER) {
+  user_update(key: {id_expr: "auth.uid"}, data: {name: $name})
+}
+
+query GetCurrentUser @auth(level: USER) {
+  user(key: {id_expr: "auth.uid"}) {
+    email
+    name
+    role
+  }
+}
+
+query ListUsers @auth(level: USER) {
+  users {
+    name
+    email
+  }
+}
+
+mutation DeleteUser @auth(level: USER) {
+  user_delete(key: {id_expr: "auth.uid"})
+}
+
+mutation CreateCourse($courseCode: String!, $title: String!, $instructorName: String!) @auth(level: USER) {
+  course_insert(data: {courseCode: $courseCode, title: $title, instructorName: $instructorName})
+}
+
+mutation UpdateCourse($id: UUID!, $description: String) @auth(level: USER) {
+  course_update(key: {id: $id}, data: {description: $description})
+}
+
+query GetCourse($id: UUID!) @auth(level: PUBLIC, insecureReason: "Course catalog is public information.") {
+  course(id: $id) {
+    title
+    instructorName
+  }
+}
+
+query ListCourses @auth(level: PUBLIC, insecureReason: "Course catalog is public information.") {
+  courses {
+    courseCode
+    title
+  }
+}
+
+mutation DeleteCourse($id: UUID!) @auth(level: USER) {
+  course_delete(key: {id: $id})
+}
+
+mutation EnrollInCourse($courseId: UUID!, $semester: String!) @auth(level: USER) {
+  enrollment_insert(data: {
+    courseId: $courseId,
+    studentId_expr: "auth.uid",
+    semester: $semester
+  })
+}
+
+mutation UpdateEnrollmentGrade($id: UUID!, $grade: String!) @auth(level: USER) {
+  enrollment_update(key: {id: $id}, data: {grade: $grade})
+}
+
+query GetEnrollment($id: UUID!) @auth(level: USER) {
+  enrollment(id: $id) {
+    semester
+    grade
+    course { title }
+  }
+}
+
+query ListMyEnrollments @auth(level: USER) {
+  enrollments(where: {studentId: {eq_expr: "auth.uid"}}) {
+    semester
+    course { title }
+  }
+}
+
+mutation DropCourse($id: UUID!) @auth(level: USER) {
+  enrollment_delete(key: {id: $id})
+}
+
+mutation PostAnnouncement($title: String!, $content: String!) @auth(level: USER) {
+  announcement_insert(data: {
+    title: $title,
+    content: $content,
+    authorId_expr: "auth.uid",
+    createdAt_expr: "request.time"
+  })
+}
+
+mutation UpdateAnnouncement($id: UUID!, $content: String!) @auth(level: USER) {
+  announcement_update(key: {id: $id}, data: {content: $content})
+}
+
+query GetAnnouncement($id: UUID!) @auth(level: PUBLIC, insecureReason: "Announcements are public.") {
+  announcement(id: $id) {
+    title
+    content
+  }
+}
+
+query ListAnnouncements @auth(level: PUBLIC, insecureReason: "Announcements are public.") {
+  announcements {
+    title
+    createdAt
+  }
+}
+
+mutation DeleteAnnouncement($id: UUID!) @auth(level: USER) {
+  announcement_delete(key: {id: $id})
+}
+
+mutation CreateNotification($userId: UUID!, $message: String!) @auth(level: USER) {
+  notification_insert(data: {
+    userId: $userId,
+    message: $message,
+    isRead: false,
+    createdAt_expr: "request.time"
+  })
+}
+
+mutation MarkNotificationRead($id: UUID!) @auth(level: USER) {
+  notification_update(key: {id: $id}, data: {isRead: true})
+}
+
+query GetNotification($id: UUID!) @auth(level: USER) {
+  notification(id: $id) {
+    message
+    isRead
+  }
+}
+
+query ListMyNotifications @auth(level: USER) {
+  notifications(where: {userId: {eq_expr: "auth.uid"}}) {
+    message
+    createdAt
+  }
+}
+
+mutation DeleteNotification($id: UUID!) @auth(level: USER) {
+  notification_delete(key: {id: $id})
+}
