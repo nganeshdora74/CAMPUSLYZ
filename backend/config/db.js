@@ -4,7 +4,14 @@ require("dotenv").config();
 
 const mongoose = require("mongoose");
 
-let cachedConnection = null;
+/**
+ * Global cache across serverless function invocations on Vercel
+ */
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
 async function connectDB() {
   const mongoURI = process.env.MONGODB_URI;
@@ -13,29 +20,43 @@ async function connectDB() {
     throw new Error("MONGODB_URI is missing in environment variables");
   }
 
-  // If already connected or connecting, return existing connection
+  // If connection is already open and ready, return existing connection
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
+
   if (mongoose.connection.readyState === 1) {
-    return mongoose.connection;
+    cached.conn = mongoose.connection;
+    return cached.conn;
   }
 
-  if (cachedConnection) {
-    return cachedConnection;
-  }
-
-  cachedConnection = mongoose
-    .connect(mongoURI, {
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
       serverSelectionTimeoutMS: 10000,
-    })
-    .then((mongooseInstance) => {
-      console.log("MongoDB connected successfully");
-      return mongooseInstance.connection;
-    })
-    .catch((err) => {
-      cachedConnection = null;
-      throw err;
-    });
+      maxPoolSize: 10,
+    };
 
-  return cachedConnection;
+    cached.promise = mongoose
+      .connect(mongoURI, opts)
+      .then((mongooseInstance) => {
+        console.log("MongoDB connected successfully");
+        return mongooseInstance.connection;
+      })
+      .catch((err) => {
+        cached.promise = null;
+        throw err;
+      });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
+  return cached.conn;
 }
 
 module.exports = connectDB;

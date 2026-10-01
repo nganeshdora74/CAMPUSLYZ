@@ -5,7 +5,8 @@
   "main": "api/index.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "echo 'Backend build ready'"
   },
   "keywords": [],
   "author": "",

@@ -13,6 +13,9 @@ const apiRoutes = require("./routes");
 
 const app = express();
 
+// Trust reverse proxy for Vercel Serverless deployments
+app.set("trust proxy", 1);
+
 // ============================================================
 // MIDDLEWARE
 // ============================================================
@@ -63,9 +66,15 @@ app.use(async (req, res, next) => {
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "Campusly Backend is running!",
+    name: "Campusly Backend API",
+    status: "online",
     version: "2.0.0",
+    docs: "/api/health",
   });
+});
+
+app.get("/health", (req, res) => {
+  res.redirect("/api/health");
 });
 
 // Mount modular API routes
