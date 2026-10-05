@@ -506,7 +506,7 @@ export default function HomeScreen() {
         <View style={styles.headerBrandCol}>
           <View style={styles.logoRow}>
             <View style={[styles.logoCircle, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="school" size={24} color={colors.primary} />
+              <Ionicons name="school" size={18} color={colors.primary} />
             </View>
             <Text style={[styles.brandTitle, { color: colors.text }]}>Campusly</Text>
           </View>
@@ -529,7 +529,7 @@ export default function HomeScreen() {
             activeOpacity={0.7}
             onPress={() => router.push("/(tab)/ai-assistant")}
           >
-            <Ionicons name="sparkles" size={15} color={colors.primary} />
+            <Ionicons name="sparkles" size={13} color={colors.primary} />
             <Text style={[styles.headerAiBtnText, { color: colors.primary }]}>AI</Text>
           </TouchableOpacity>
 
@@ -541,7 +541,7 @@ export default function HomeScreen() {
             <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
               <Text style={styles.avatarLetter}>{userInitial}</Text>
             </View>
-            <Ionicons name="chevron-down" size={13} color={colors.textSecondary} style={{ marginLeft: 4 }} />
+            <Ionicons name="chevron-down" size={11} color={colors.textSecondary} style={{ marginLeft: 3 }} />
           </TouchableOpacity>
         </View>
       </View>
@@ -580,21 +580,21 @@ export default function HomeScreen() {
             {/* Open Laptop */}
             <View style={styles.laptopContainer}>
               <View style={styles.laptopScreen}>
-                <Ionicons name="school" size={22} color="#DDD6FE" />
+                <Ionicons name="school" size={16} color="#DDD6FE" />
               </View>
               <View style={styles.laptopKeyboard} />
             </View>
 
             {/* Stack of colorful study books */}
             <View style={styles.booksStack}>
-              <View style={[styles.bookPill, { backgroundColor: "#60A5FA", width: 44 }]} />
-              <View style={[styles.bookPill, { backgroundColor: "#FBBF24", width: 48 }]} />
-              <View style={[styles.bookPill, { backgroundColor: "#C084FC", width: 52 }]} />
+              <View style={[styles.bookPill, { backgroundColor: "#60A5FA", width: 32 }]} />
+              <View style={[styles.bookPill, { backgroundColor: "#FBBF24", width: 36 }]} />
+              <View style={[styles.bookPill, { backgroundColor: "#C084FC", width: 40 }]} />
             </View>
 
             {/* Little potted desk plant */}
             <View style={styles.pottedPlant}>
-              <Ionicons name="leaf" size={18} color="#86EFAC" />
+              <Ionicons name="leaf" size={14} color="#86EFAC" />
               <View style={styles.plantPot} />
             </View>
           </View>
@@ -627,15 +627,15 @@ export default function HomeScreen() {
             >
               <View style={styles.cardTopRow}>
                 <View style={[styles.cardIconBox, { backgroundColor: item.iconBg }]}>
-                  <Ionicons name={item.icon} size={19} color={item.iconColor} />
+                  <Ionicons name={item.icon} size={16} color={item.iconColor} />
                 </View>
-                <Ionicons name="chevron-forward" size={15} color={colors.textSecondary} />
+                <Ionicons name="chevron-forward" size={12} color={colors.textSecondary} />
               </View>
 
-              <Text style={[styles.cardTitle, { color: colors.text }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
                 {t(item.id, item.title)}
               </Text>
-              <Text style={[styles.cardDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+              <Text style={[styles.cardDesc, { color: colors.textSecondary }]} numberOfLines={1}>
                 {item.description}
               </Text>
             </TouchableOpacity>
@@ -648,7 +648,7 @@ export default function HomeScreen() {
         <View style={styles.sectionHeaderRow}>
           <View style={styles.titleWithIcon}>
             <View style={[styles.titleIconBadge, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="calendar" size={16} color={colors.primary} />
+              <Ionicons name="calendar" size={14} color={colors.primary} />
             </View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("todaySchedule", "Today's Schedule")}</Text>
           </View>
@@ -659,7 +659,7 @@ export default function HomeScreen() {
               onPress={() => navigateTo("/schedule")}
               activeOpacity={0.7}
             >
-              <Text style={[styles.viewAllText, { marginLeft: 8, color: colors.primary }]}>{t("viewAll", "View All →")}</Text>
+              <Text style={[styles.viewAllText, { marginLeft: 6, color: colors.primary }]}>{t("viewAll", "View All →")}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -679,11 +679,11 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.scheduleDetailCol}>
-                  <Text style={[styles.scheduleSubject, { color: colors.text }]}>{item.subject}</Text>
-                  <Text style={[styles.scheduleRoom, { color: colors.textSecondary }]}>{item.room}</Text>
+                  <Text style={[styles.scheduleSubject, { color: colors.text }]} numberOfLines={1}>{item.subject}</Text>
+                  <Text style={[styles.scheduleRoom, { color: colors.textSecondary }]} numberOfLines={1}>{item.room}</Text>
                 </View>
 
-                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} />
               </TouchableOpacity>
 
               {index < scheduleList.length - 1 && <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />}
@@ -697,7 +697,7 @@ export default function HomeScreen() {
         <View style={styles.sectionHeaderRow}>
           <View style={styles.titleWithIcon}>
             <View style={[styles.titleIconBadge, { backgroundColor: colors.primaryLight }]}>
-              <Ionicons name="megaphone" size={16} color={colors.primary} />
+              <Ionicons name="megaphone" size={14} color={colors.primary} />
             </View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("recentNotices", "Recent Notices")}</Text>
           </View>
@@ -719,7 +719,7 @@ export default function HomeScreen() {
                 onPress={() => navigateTo("/notices")}
               >
                 <View style={[styles.noticeIconBox, { backgroundColor: item.iconBg }]}>
-                  <Ionicons name={item.icon} size={18} color={item.iconColor} />
+                  <Ionicons name={item.icon} size={15} color={item.iconColor} />
                 </View>
 
                 <View style={styles.noticeTextCol}>
@@ -741,7 +741,7 @@ export default function HomeScreen() {
 
                 <View style={styles.noticeRightCol}>
                   <Text style={[styles.noticeDate, { color: colors.textSecondary }]}>{item.date}</Text>
-                  <Ionicons name="chevron-forward" size={15} color={colors.textSecondary} style={{ marginTop: 4 }} />
+                  <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} style={{ marginTop: 2 }} />
                 </View>
               </TouchableOpacity>
 
@@ -762,16 +762,16 @@ export default function HomeScreen() {
           >
             <View style={styles.statHeaderRow}>
               <View style={[styles.statIconBadge, { backgroundColor: colors.primaryLight }]}>
-                <Ionicons name="calendar-outline" size={15} color={colors.primary} />
+                <Ionicons name="calendar-outline" size={12} color={colors.primary} />
               </View>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t("attendance", "Attendance")}</Text>
-              <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
+              <Ionicons name="chevron-forward" size={10} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
             </View>
 
             <Text style={[styles.statValue, { color: colors.primary }]}>
               {attendancePercentage}
             </Text>
-            <Text style={[styles.statSubtext, { color: colors.textSecondary }]}>{t("attendanceGood", "Your attendance is good!")}</Text>
+            <Text style={[styles.statSubtext, { color: colors.textSecondary }]} numberOfLines={1}>{t("attendanceGood", "Good attendance")}</Text>
           </TouchableOpacity>
 
           {/* 2. Study Today */}
@@ -782,16 +782,16 @@ export default function HomeScreen() {
           >
             <View style={styles.statHeaderRow}>
               <View style={[styles.statIconBadge, { backgroundColor: "#E0F2FE" }]}>
-                <Ionicons name="school-outline" size={15} color="#0284C7" />
+                <Ionicons name="school-outline" size={12} color="#0284C7" />
               </View>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t("studyHours", "Study Today")}</Text>
-              <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t("studyHours", "Study")}</Text>
+              <Ionicons name="chevron-forward" size={10} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
             </View>
 
             <Text style={[styles.statValue, { color: "#0284C7" }]}>
               {studyMinutes}m / {Math.round(studyTarget / 60)}h
             </Text>
-            <Text style={[styles.statSubtext, { color: colors.textSecondary }]}>{t("targetReached", "of daily goal")}</Text>
+            <Text style={[styles.statSubtext, { color: colors.textSecondary }]} numberOfLines={1}>{t("targetReached", "Daily goal")}</Text>
           </TouchableOpacity>
 
           {/* 3. CGPA */}
@@ -802,17 +802,17 @@ export default function HomeScreen() {
           >
             <View style={styles.statHeaderRow}>
               <View style={[styles.statIconBadge, { backgroundColor: "#DCFCE7" }]}>
-                <Ionicons name="star" size={14} color="#16A34A" />
+                <Ionicons name="star" size={12} color="#16A34A" />
               </View>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t("cgpa", "CGPA")}</Text>
-              <Ionicons name="chevron-forward" size={13} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
+              <Ionicons name="chevron-forward" size={10} color={colors.textSecondary} style={{ marginLeft: "auto" }} />
             </View>
 
             <Text style={[styles.statValue, { color: "#16A34A" }]}>
               {cgpa}
             </Text>
-            <Text style={[styles.statSubtext, { color: "#16A34A" }]}>
-              {t("cgpaStatus", "Academic Score")}
+            <Text style={[styles.statSubtext, { color: "#16A34A" }]} numberOfLines={1}>
+              {t("cgpaStatus", "Score")}
             </Text>
           </TouchableOpacity>
         </View>
@@ -840,25 +840,25 @@ export default function HomeScreen() {
               },
             ]}
           >
-            <Ionicons name="sparkles" size={20} color={colors.primary} />
+            <Ionicons name="sparkles" size={16} color={colors.primary} />
           </View>
 
           <View style={styles.aiTextCol}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Text style={[styles.aiTitle, { color: colors.text }]}>
                 {t("askCampuslyAI", "Ask Campusly AI")}
               </Text>
-              <View style={{ backgroundColor: "#6366F1", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
-                <Text style={{ color: "#FFFFFF", fontSize: 9.5, fontWeight: "800" }}>MOBILENET</Text>
+              <View style={{ backgroundColor: "#6366F1", paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4 }}>
+                <Text style={{ color: "#FFFFFF", fontSize: 8.5, fontWeight: "800" }}>MOBILENET</Text>
               </View>
             </View>
-            <Text style={[styles.aiSubtitle, { color: colors.textSecondary }]}>
+            <Text style={[styles.aiSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
               Visual neural scanner: Snap lab items, circuit diagrams, math, or notes for instant solutions!
             </Text>
           </View>
 
           <View style={[styles.chatNowBtn, { backgroundColor: colors.primary }]}>
-            <Text style={styles.chatNowBtnText}>{t("chatNow", "Scan / Chat →")}</Text>
+            <Text style={styles.chatNowBtnText}>{t("chatNow", "Scan →")}</Text>
           </View>
         </TouchableOpacity>
 
@@ -871,7 +871,7 @@ export default function HomeScreen() {
             {
               backgroundColor: isDark ? colors.card : "#EEF2FF",
               borderColor: colors.border,
-              marginTop: 14,
+              marginTop: 10,
             },
           ]}
           activeOpacity={0.85}
@@ -886,29 +886,29 @@ export default function HomeScreen() {
               },
             ]}
           >
-            <Ionicons name="exit" size={22} color="#4F46E5" />
+            <Ionicons name="exit" size={17} color="#4F46E5" />
           </View>
 
           <View style={styles.aiTextCol}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Text style={[styles.aiTitle, { color: colors.text }]}>
                 Leave & Gate Pass
               </Text>
-              <View style={{ backgroundColor: "#4F46E5", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
-                <Text style={{ color: "#FFFFFF", fontSize: 9.5, fontWeight: "800" }}>STUDENT PASS</Text>
+              <View style={{ backgroundColor: "#4F46E5", paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4 }}>
+                <Text style={{ color: "#FFFFFF", fontSize: 8.5, fontWeight: "800" }}>PASS</Text>
               </View>
             </View>
-            <Text style={[styles.aiSubtitle, { color: colors.textSecondary }]}>
-              Apply for campus out passes & absence leaves, attach hardcopies, and track real-time approval status.
+            <Text style={[styles.aiSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
+              Apply for campus out passes & absence leaves, attach hardcopies, and track approval status.
             </Text>
           </View>
 
           <View style={[styles.chatNowBtn, { backgroundColor: "#4F46E5" }]}>
-            <Text style={styles.chatNowBtnText}>Apply / Status →</Text>
+            <Text style={styles.chatNowBtnText}>Apply →</Text>
           </View>
         </TouchableOpacity>
 
-        <View style={{ height: 36 }} />
+        <View style={{ height: 24 }} />
       </ScrollView>
 
       {/* ================================================== */}
@@ -925,7 +925,7 @@ export default function HomeScreen() {
         activeOpacity={0.88}
         onPress={() => navigateTo("/(tab)/ai-assistant")}
       >
-        <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+        <Ionicons name="sparkles" size={15} color="#FFFFFF" />
         <Text style={styles.floatingFabText}>AI Help</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -938,7 +938,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   scrollContent: {
-    paddingBottom: 95,
+    paddingBottom: 75,
   },
 
   /* HEADER */
@@ -946,9 +946,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 8,
     backgroundColor: "#FFFFFF",
   },
   headerBrandCol: {
@@ -959,24 +959,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     backgroundColor: "#EEF2FF",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 6,
   },
   brandTitle: {
-    fontSize: 21,
+    fontSize: 17,
     fontWeight: "900",
     color: "#251460",
     letterSpacing: -0.2,
   },
   brandTagline: {
-    fontSize: 12,
+    fontSize: 10.5,
     color: "#64748B",
-    marginTop: 2,
+    marginTop: 1,
     fontWeight: "400",
   },
   profileButton: {
@@ -985,40 +985,40 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   avatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#4C268F",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#4C268F",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   avatarLetter: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
   },
 
   /* WELCOME BANNER */
   welcomeBanner: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 22,
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 16,
     backgroundColor: "#7048E8",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 22,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
     flexDirection: "row",
     alignItems: "center",
     shadowColor: "#7048E8",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
     overflow: "hidden",
   },
   welcomeLeftCol: {
@@ -1026,89 +1026,89 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   welcomeTagRow: {
-    marginBottom: 4,
+    marginBottom: 2,
   },
   welcomeTagText: {
     color: "rgba(255, 255, 255, 0.9)",
-    fontSize: 11,
+    fontSize: 9.5,
     fontWeight: "700",
     letterSpacing: 0.5,
   },
   welcomeName: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "900",
     letterSpacing: -0.2,
   },
   welcomeHeading: {
     color: "#FFFFFF",
-    fontSize: 14.5,
+    fontSize: 12,
     fontWeight: "700",
-    marginTop: 6,
+    marginTop: 4,
   },
   welcomeSubtext: {
     color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 12,
-    marginTop: 3,
-    lineHeight: 16,
+    fontSize: 10.5,
+    marginTop: 2,
+    lineHeight: 14,
   },
 
   /* ILLUSTRATION VECTOR */
   illustrationWrapper: {
-    flex: 1,
+    flex: 0.9,
     alignItems: "center",
     justifyContent: "center",
-    height: 110,
+    height: 75,
     position: "relative",
   },
   laptopContainer: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   laptopScreen: {
-    width: 68,
-    height: 44,
-    borderRadius: 6,
+    width: 50,
+    height: 32,
+    borderRadius: 5,
     backgroundColor: "#4C268F",
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: "#E9D5FF",
     alignItems: "center",
     justifyContent: "center",
   },
   laptopKeyboard: {
-    width: 82,
-    height: 6,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
+    width: 60,
+    height: 4,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
     backgroundColor: "#E9D5FF",
   },
   booksStack: {
     position: "absolute",
     left: 2,
-    bottom: 8,
+    bottom: 4,
     alignItems: "flex-start",
   },
   bookPill: {
-    height: 7,
-    borderRadius: 3.5,
+    height: 5,
+    borderRadius: 2.5,
     marginBottom: 2,
     shadowColor: "#000",
     shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 1,
+    elevation: 1,
   },
   pottedPlant: {
     position: "absolute",
     right: 4,
-    bottom: 12,
+    bottom: 6,
     alignItems: "center",
   },
   plantPot: {
-    width: 14,
-    height: 12,
+    width: 11,
+    height: 9,
     backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
     marginTop: -2,
   },
 
@@ -1117,30 +1117,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    marginTop: 22,
-    marginBottom: 10,
+    paddingHorizontal: 14,
+    marginTop: 14,
+    marginBottom: 6,
   },
   titleWithIcon: {
     flexDirection: "row",
     alignItems: "center",
   },
   titleIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 6,
   },
   sectionTitle: {
-    fontSize: 16.5,
+    fontSize: 14,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.2,
   },
   viewAllText: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: "700",
     color: "#4318FF",
   },
@@ -1149,7 +1149,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   scheduleDateText: {
-    fontSize: 12,
+    fontSize: 10.5,
     color: "#64748B",
     fontWeight: "500",
   },
@@ -1158,63 +1158,63 @@ const styles = StyleSheet.create({
   quickAccessGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   quickAccessCard: {
-    width: "23%", // 4 columns in first row, flexible on smaller screens
-    minWidth: 105,
+    width: "23%",
+    minWidth: 72,
     flexGrow: 1,
-    margin: "1%",
+    margin: 4,
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 12,
+    padding: 8,
     borderWidth: 1,
     borderColor: "#EEF2F6",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 1,
   },
   cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   cardIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
   cardTitle: {
-    fontSize: 14.5,
+    fontSize: 11,
     fontWeight: "700",
     color: "#0F172A",
   },
   cardDesc: {
-    fontSize: 11,
+    fontSize: 9.5,
     color: "#64748B",
-    marginTop: 3,
-    lineHeight: 14.5,
+    marginTop: 2,
+    lineHeight: 12,
   },
 
   /* WHITE CONTENT CARD (SCHEDULE & NOTICES) */
   contentCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    marginHorizontal: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    borderRadius: 14,
+    marginHorizontal: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderWidth: 1,
     borderColor: "#EEF2F6",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 1,
   },
   rowDivider: {
     height: 1,
@@ -1225,73 +1225,73 @@ const styles = StyleSheet.create({
   scheduleRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   timeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginRight: 12,
-    minWidth: 130,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginRight: 8,
+    minWidth: 92,
     alignItems: "center",
   },
   timeBadgeText: {
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: "700",
   },
   scheduleDetailCol: {
     flex: 1,
   },
   scheduleSubject: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: "700",
     color: "#0F172A",
   },
   scheduleRoom: {
-    fontSize: 12,
+    fontSize: 10.5,
     color: "#64748B",
-    marginTop: 2,
+    marginTop: 1,
   },
 
   /* NOTICE ROWS */
   noticeRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   noticeIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: 8,
   },
   noticeTextCol: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
   },
   noticeTagTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 3,
+    marginBottom: 2,
   },
   noticePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
   },
   noticePillText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: "700",
   },
   noticeTitle: {
-    fontSize: 13.5,
+    fontSize: 12,
     fontWeight: "700",
     color: "#0F172A",
   },
   noticeDesc: {
-    fontSize: 11.5,
+    fontSize: 10.5,
     color: "#64748B",
     marginTop: 1,
   },
@@ -1299,7 +1299,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   noticeDate: {
-    fontSize: 11,
+    fontSize: 9.5,
     color: "#94A3B8",
     fontWeight: "500",
   },
@@ -1308,74 +1308,74 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginHorizontal: 16,
-    marginTop: 16,
+    marginHorizontal: 12,
+    marginTop: 10,
   },
   statCard: {
     flex: 1,
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 12,
-    marginHorizontal: 4,
+    borderRadius: 12,
+    padding: 8,
+    marginHorizontal: 3,
     borderWidth: 1,
     borderColor: "#EEF2F6",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 1,
   },
   statHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   statIconBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 5,
+    marginRight: 4,
   },
   statLabel: {
-    fontSize: 11.5,
+    fontSize: 10,
     color: "#475569",
     fontWeight: "600",
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 14.5,
     fontWeight: "800",
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   statSubtext: {
-    fontSize: 10,
+    fontSize: 9,
     color: "#64748B",
-    marginTop: 3,
+    marginTop: 2,
     fontWeight: "500",
   },
 
   /* ASK CAMPUSLY AI BANNER */
   aiBanner: {
     backgroundColor: "#F5F3FF",
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E0E7FF",
-    marginHorizontal: 16,
-    marginTop: 18,
-    padding: 12,
+    marginHorizontal: 12,
+    marginTop: 10,
+    padding: 10,
     flexDirection: "row",
     alignItems: "center",
     shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   aiIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#EDE9FE",
     alignItems: "center",
     justifyContent: "center",
@@ -1384,30 +1384,30 @@ const styles = StyleSheet.create({
   },
   aiTextCol: {
     flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+    marginLeft: 8,
+    marginRight: 6,
   },
   aiTitle: {
-    fontSize: 14.5,
+    fontSize: 13,
     fontWeight: "800",
     color: "#0F172A",
   },
   aiSubtitle: {
-    fontSize: 11.5,
+    fontSize: 10.5,
     color: "#64748B",
-    marginTop: 2,
+    marginTop: 1,
   },
   chatNowBtn: {
     backgroundColor: "#3B82F6",
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   chatNowBtnText: {
     color: "#FFFFFF",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
 
@@ -1415,42 +1415,42 @@ const styles = StyleSheet.create({
   headerRightRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   headerAiBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     borderWidth: 1,
-    gap: 4,
+    gap: 3,
   },
   headerAiBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
 
   /* FLOATING AI ASSISTANT FAB */
   floatingAiFab: {
     position: "absolute",
-    bottom: 22,
-    right: 18,
+    bottom: 16,
+    right: 14,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 28,
-    gap: 7,
-    elevation: 6,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 5,
+    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
     zIndex: 999,
   },
   floatingFabText: {
     color: "#FFFFFF",
-    fontSize: 13.5,
+    fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.2,
   },

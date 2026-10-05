@@ -272,9 +272,9 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: 50,
-    paddingBottom: 40,
+    padding: 16,
+    paddingTop: 30,
+    paddingBottom: 24,
   },
 
   content: {
@@ -283,52 +283,52 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width: 65,
-    height: 65,
-    borderRadius: 19,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     backgroundColor: "#5141E5",
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 12,
   },
 
   logoText: {
     color: "#FFFFFF",
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: "900",
   },
 
   title: {
-    fontSize: 35,
+    fontSize: 24,
     fontWeight: "900",
     color: "#111827",
   },
 
   subtitle: {
     color: "#6B7280",
-    fontSize: 16,
-    marginTop: 8,
-    marginBottom: 28,
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: 16,
   },
 
   label: {
     color: "#374151",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
-    marginBottom: 7,
+    marginBottom: 4,
   },
 
   roleSelectorRow: {
     flexDirection: "row",
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 12,
   },
 
   roleBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
     backgroundColor: "#F9FAFB",
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   },
 
   roleBtnText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: "#6B7280",
   },
@@ -353,12 +353,12 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    height: 58,
+    height: 44,
     backgroundColor: "#FFFFFF",
-    borderRadius: 17,
-    paddingHorizontal: 18,
-    fontSize: 16,
-    marginBottom: 14,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 13.5,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     color: "#111827",
@@ -366,18 +366,18 @@ const styles = StyleSheet.create({
 
   passwordHint: {
     color: "#9CA3AF",
-    fontSize: 12,
-    marginTop: -5,
-    marginBottom: 16,
+    fontSize: 11,
+    marginTop: -4,
+    marginBottom: 12,
   },
 
   button: {
-    height: 58,
+    height: 46,
     backgroundColor: "#5141E5",
-    borderRadius: 18,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 6,
   },
 
   disabledButton: {
@@ -386,18 +386,18 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: "800",
   },
 
   back: {
     alignItems: "center",
-    marginTop: 22,
+    marginTop: 14,
   },
 
   backText: {
     color: "#5141E5",
     fontWeight: "700",
-    fontSize: 14,
+    fontSize: 12,
   },
 });

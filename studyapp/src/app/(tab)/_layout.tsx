@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { Tabs, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { onAuthStateChanged } from "firebase/auth";
@@ -28,15 +29,15 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          height: 82,
-          paddingTop: 8,
-          paddingBottom: 12,
+          height: Platform.OS === "ios" ? 70 : 58,
+          paddingTop: 4,
+          paddingBottom: Platform.OS === "ios" ? 18 : 6,
           backgroundColor: colors.card,
           borderTopWidth: 1,
           borderTopColor: colors.border,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 10.5,
           fontWeight: "600",
         },
       }}
@@ -46,10 +47,10 @@ export default function TabLayout() {
         name="home"
         options={{
           title: t("home", "Home"),
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons
               name="home-outline"
-              size={size}
+              size={20}
               color={color}
             />
           ),
@@ -61,10 +62,10 @@ export default function TabLayout() {
         name="tasks"
         options={{
           title: t("tasks", "Tasks"),
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons
               name="checkmark-circle-outline"
-              size={size}
+              size={20}
               color={color}
             />
           ),
@@ -76,10 +77,10 @@ export default function TabLayout() {
         name="schedule"
         options={{
           title: t("schedule", "Schedule"),
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons
               name="time-outline"
-              size={size}
+              size={20}
               color={color}
             />
           ),
@@ -91,25 +92,25 @@ export default function TabLayout() {
         name="progress"
         options={{
           title: t("progress", "Progress"),
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons
               name="trending-up-outline"
-              size={size}
+              size={20}
               color={color}
             />
           ),
         }}
       />
 
-      {/* AI Assistant - by the side of Profile */}
+      {/* AI Assistant - compact title so it doesn't wrap */}
       <Tabs.Screen
         name="ai-assistant"
         options={{
-          title: t("aiAssistant", "AI Assistant"),
-          tabBarIcon: ({ color, size, focused }) => (
+          title: t("aiShort", "AI"),
+          tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "sparkles" : "sparkles-outline"}
-              size={size}
+              size={20}
               color={color}
             />
           ),
@@ -121,10 +122,10 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: t("profile", "Profile"),
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             <Ionicons
               name="person-outline"
-              size={size}
+              size={20}
               color={color}
             />
           ),
