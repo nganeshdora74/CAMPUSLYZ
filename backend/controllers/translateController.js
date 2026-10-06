@@ -1,3 +1,4 @@
+const { GoogleGenAI } = require("@google/genai");
 const aiConfig = require("../config/ai");
 
 const LANGUAGE_CODES = {
@@ -33,16 +34,25 @@ exports.translateText = async (req, res) => {
     const sl = LANGUAGE_CODES[from] || "auto";
     const tl = LANGUAGE_CODES[to] || "en";
 
-    // 1. First attempt: Fast Google Translate API
+    // ============================================================
+    // 1. FIRST ATTEMPT: GOOGLE TRANSLATE
+    // ============================================================
+
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(
         text.trim()
       )}`;
+
       const gtxResponse = await fetch(url);
+
       if (gtxResponse.ok) {
         const gtxData = await gtxResponse.json();
+
         if (Array.isArray(gtxData?.[0])) {
-          const translation = gtxData[0].map((item) => item[0]).join("");
+          const translation = gtxData[0]
+            .map((item) => item[0])
+            .join("");
+
           if (translation) {
             return res.json({
               success: true,
@@ -54,43 +64,64 @@ exports.translateText = async (req, res) => {
         }
       }
     } catch (apiErr) {
-      console.warn("Direct translation failed, falling back to AI:", apiErr.message);
+      console.warn(
+        "Direct translation failed, falling back to Gemini:",
+        apiErr.message
+      );
     }
 
-    // 2. Second attempt: OpenRouter AI translation if configured
+    // ============================================================
+    // 2. SECOND ATTEMPT: GOOGLE GEMINI
+    // ============================================================
+
     if (aiConfig?.apiKey) {
       try {
-        const prompt = `Translate the following text from ${from} to ${to}. Only return the translation, nothing else.\n\nText:\n${text.trim()}`;
-        const completion = await fetch(`${aiConfig.baseURL}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${aiConfig.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: aiConfig.model,
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
-            max_tokens: 300,
-          }),
+        const ai = new GoogleGenAI({
+          apiKey: aiConfig.apiKey,
         });
 
-        if (completion.ok) {
-          const data = await completion.json();
-          const aiTranslation = data?.choices?.[0]?.message?.content?.trim();
-          if (aiTranslation) {
-            return res.json({
-              success: true,
-              translation: aiTranslation,
-              from,
-              to,
-            });
-          }
+        const prompt = `
+Translate the following text from ${from} to ${to}.
+
+Rules:
+- Return ONLY the translated text.
+- Do not add explanations.
+- Do not add quotation marks.
+- Preserve the original meaning.
+- Preserve names, numbers, formatting, and important technical terms.
+- If the text is already in the target language, return it unchanged.
+
+Text:
+${text.trim()}
+`;
+
+        const response = await ai.models.generateContent({
+          model: aiConfig.model || "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+            temperature: 0.2,
+            maxOutputTokens: 500,
+          },
+        });
+
+        const aiTranslation = response?.text?.trim();
+
+        if (aiTranslation) {
+          return res.json({
+            success: true,
+            translation: aiTranslation,
+            from,
+            to,
+          });
         }
       } catch (aiErr) {
-        console.warn("AI translation error:", aiErr.message);
+        console.warn("Gemini translation error:", aiErr.message);
       }
     }
+
+    // ============================================================
+    // 3. TRANSLATION FAILED
+    // ============================================================
 
     return res.status(500).json({
       success: false,
@@ -98,7 +129,8 @@ exports.translateText = async (req, res) => {
     });
   } catch (error) {
     console.error("Translation Controller Error:", error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
       message: error.message || "Translation failed",
     });

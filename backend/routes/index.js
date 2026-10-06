@@ -29,7 +29,7 @@ router.get("/health", (req, res) => {
     server: "online",
     database:
       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    ai: aiConfig ? "configured (OpenRouter)" : "not configured",
+    ai: aiConfig ? "configured (Gemini)" : "not configured",
     firebase: admin.apps.length > 0 ? "configured" : "not configured",
   });
 });
