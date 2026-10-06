@@ -4,6 +4,11 @@ const chatController = require("../controllers/chatController");
 const firebaseAuth = require("../middleware/firebaseAuth");
 const { chatLimiter } = require("../middleware/rateLimiter");
 
-router.post("/", firebaseAuth, chatLimiter, chatController.chatWithAI);
+router.post(
+  "/",
+  firebaseAuth.optional || firebaseAuth,
+  chatLimiter,
+  chatController.chatWithAI
+);
 
 module.exports = router;

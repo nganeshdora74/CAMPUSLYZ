@@ -1346,9 +1346,17 @@ export default function ProfileScreen() {
                           </TouchableOpacity>
                         )}
 
-                        <Text style={{ fontSize: 10.5, color: colors.textSecondary, marginTop: 6 }}>
-                          By: {note.teacherName || "Faculty Mentor"}
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+                          <Ionicons
+                            name={note.authorRole === "Admin" ? "shield-checkmark" : "school-outline"}
+                            size={13}
+                            color={note.authorRole === "Admin" ? "#2563EB" : colors.textSecondary}
+                          />
+                          <Text style={{ fontSize: 10.5, color: colors.textSecondary }}>
+                            {note.authorRole === "Admin" ? "Admin Office: " : "By: "}
+                            <Text style={{ fontWeight: "700", color: colors.text }}>{note.teacherName || "Faculty Mentor"}</Text>
+                          </Text>
+                        </View>
                       </View>
 
                       <View style={[styles.viewCertPill, { marginTop: 4 }]}>
@@ -2059,7 +2067,7 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                 )}
 
-                {/* Teacher Details */}
+                {/* Author Details (Faculty or Admin) */}
                 <View
                   style={{
                     flexDirection: "row",
@@ -2070,13 +2078,19 @@ export default function ProfileScreen() {
                     borderTopColor: colors.border,
                   }}
                 >
-                  <Ionicons name="person-circle" size={24} color={colors.primary} />
+                  <Ionicons
+                    name={selectedNote.authorRole === "Admin" ? "shield-checkmark" : "school"}
+                    size={22}
+                    color={selectedNote.authorRole === "Admin" ? "#2563EB" : colors.primary}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 12.5, fontWeight: "700", color: colors.text }}>
-                      {selectedNote.teacherName || "Faculty Mentor"}
+                      {selectedNote.teacherName || (selectedNote.authorRole === "Admin" ? "Admin Academic Office" : "Faculty Mentor")}
                     </Text>
                     <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                      Academic Faculty • Verified Teacher
+                      {selectedNote.authorRole === "Admin"
+                        ? "Institutional Authority • Verified Admin Office"
+                        : "Academic Faculty • Verified Teacher"}
                     </Text>
                   </View>
                 </View>

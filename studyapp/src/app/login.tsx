@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { router } from "expo-router";
 import {
@@ -313,9 +314,11 @@ export default function LoginScreen() {
       >
         {/* LOGO */}
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>C</Text>
-          </View>
+          <Image
+            source={require("../../assets/images/icon.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.appName}>Campusly</Text>
           <Text style={styles.subtitle}>Your Smart Campus Companion</Text>
         </View>
@@ -461,6 +464,12 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: "center",
     marginBottom: 16,
+  },
+  logoImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    marginBottom: 8,
   },
   logo: {
     width: 50,

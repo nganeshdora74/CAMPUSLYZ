@@ -1,5 +1,8 @@
 {
   "plugins": [
     "expo-router"
-  ]
+  ],
+  "android": {
+    "package": "com.sekher.campusly"
+  }
 }

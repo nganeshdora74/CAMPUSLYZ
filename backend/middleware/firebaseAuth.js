@@ -92,4 +92,38 @@ const firebaseAuth = async (req, res, next) => {
   }
 };
 
+const optionalFirebaseAuth = async (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header || !admin.apps.length) {
+    return next();
+  }
+
+  const token = req.headers.authorization.split(" ")[1] || "";
+  if (!token) return next();
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const email = decoded.email?.toLowerCase();
+    if (email) {
+      const mongoUser = await User.findOne({ email });
+      if (mongoUser) {
+        req.user = {
+          id: mongoUser._id.toString(),
+          role: mongoUser.role,
+          firebaseUid: decoded.uid,
+          email,
+          name: mongoUser.name,
+        };
+      }
+    }
+  } catch (err) {
+    // Optional auth - gracefully proceed even if token has expired or is invalid
+  }
+  next();
+};
+
+firebaseAuth.optional = optionalFirebaseAuth;
+firebaseAuth.optionalFirebaseAuth = optionalFirebaseAuth;
+
 module.exports = firebaseAuth;
+

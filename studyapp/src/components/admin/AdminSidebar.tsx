@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, usePathname } from "expo-router";
@@ -98,9 +99,11 @@ export default function AdminSidebar({
     >
       {/* Brand Header */}
       <View style={styles.brandRow}>
-        <View style={styles.brandIconBox}>
-          <Ionicons name="school" size={22} color="#FFFFFF" />
-        </View>
+        <Image
+          source={require("../../../assets/images/icon.png")}
+          style={styles.brandLogo}
+          resizeMode="contain"
+        />
         <View style={{ marginLeft: 12, flex: 1 }}>
           <Text style={styles.brandTitle}>Campusly</Text>
           <Text style={styles.brandSubtitle}>Admin Portal</Text>
@@ -211,6 +214,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
     paddingHorizontal: 6,
+  },
+  brandLogo: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
   },
   brandIconBox: {
     width: 40,

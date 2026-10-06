@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
@@ -138,9 +139,11 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>C</Text>
-          </View>
+          <Image
+            source={require("../../assets/images/icon.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
 
           <Text style={styles.title}>Create account</Text>
 
@@ -282,6 +285,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  logoImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
   logo: {
     width: 48,
     height: 48,

@@ -47,7 +47,7 @@ import {
   seedDefaultConnectedStudents,
   sendTeacherStudentMessage,
 } from "../../firebase/teacherStudent";
-import { pickPdfDocument } from "../../services/certificatePdfService";
+import { pickPdfDocument, uploadSpecialNoteFile } from "../../services/certificatePdfService";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS
@@ -564,6 +564,27 @@ export default function AdminProfileScreen() {
     }
   };
 
+  const handleTakeNotePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission Required", "Please allow camera access to snap whiteboard or diagram photos.");
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+      if (!res.canceled && res.assets && res.assets[0]?.uri) {
+        setNotePhotoUrl(res.assets[0].uri);
+        setNotePhotoName(res.assets[0].fileName || `Whiteboard_${Date.now()}.jpg`);
+      }
+    } catch (e: any) {
+      Alert.alert("Camera Error", e?.message || "Could not snap photo.");
+    }
+  };
+
   const handlePickNotePdf = async () => {
     try {
       const file = await pickPdfDocument();
@@ -583,23 +604,40 @@ export default function AdminProfileScreen() {
     }
 
     setSavingNote(true);
-    const payload = {
-      title: noteTitle.trim(),
-      subject: noteSubject.trim() || "Computer Science",
-      category: noteCategory,
-      priority: notePriority,
-      content: noteContent.trim(),
-      photoUrl: notePhotoUrl.trim(),
-      photoName: notePhotoName.trim(),
-      pdfUrl: notePdfUrl.trim(),
-      pdfName: notePdfName.trim(),
-      teacherName: fullName || "Faculty Mentor",
-      teacherId: "TEACH-CSE-101",
-      targetClass: noteTargetClass.trim() || "All Classes",
-      updatedAt: serverTimestamp(),
-    };
 
     try {
+      const noteDocId = editingNoteId || `note_${Date.now()}`;
+
+      // Upload local photo to Firebase Storage
+      let finalPhotoUrl = notePhotoUrl.trim();
+      if (finalPhotoUrl && !finalPhotoUrl.startsWith("http")) {
+        finalPhotoUrl = await uploadSpecialNoteFile(finalPhotoUrl, "photo", noteDocId);
+      }
+
+      // Upload local PDF to Firebase Storage
+      let finalPdfUrl = notePdfUrl.trim();
+      if (finalPdfUrl && !finalPdfUrl.startsWith("http")) {
+        finalPdfUrl = await uploadSpecialNoteFile(finalPdfUrl, "pdf", noteDocId);
+      }
+
+      const payload = {
+        title: noteTitle.trim(),
+        subject: noteSubject.trim() || "Computer Science",
+        category: noteCategory,
+        priority: notePriority,
+        content: noteContent.trim(),
+        photoUrl: finalPhotoUrl || "",
+        photoName: notePhotoName.trim() || "",
+        pdfUrl: finalPdfUrl || "",
+        pdfName: notePdfName.trim() || "",
+        teacherName: fullName || "Faculty Mentor",
+        teacherId: "TEACH-CSE-101",
+        authorRole: "Faculty",
+        updatedByName: fullName || "Faculty",
+        targetClass: noteTargetClass.trim() || "All Classes",
+        updatedAt: serverTimestamp(),
+      };
+
       if (editingNoteId) {
         await updateDoc(doc(db, "specialNotes", editingNoteId), payload);
         await addDoc(collection(db, "activities"), {
@@ -1631,76 +1669,142 @@ export default function AdminProfileScreen() {
                 multiline
               />
 
-              {/* Photo Attachment */}
+              {/* Photo / Diagram / Whiteboard Notes Attachment */}
               <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, marginTop: 12, backgroundColor: isDark ? colors.surface : "#F8FAFC" }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Ionicons name="image" size={16} color="#7C3AED" />
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Diagram / Photo Attachment</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#7C3AED", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
-                    onPress={handlePickNotePhoto}
-                  >
-                    <Ionicons name="camera-outline" size={13} color="#7C3AED" />
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#7C3AED" }}>Pick Photo</Text>
-                  </TouchableOpacity>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="image" size={16} color="#7C3AED" />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Diagram, Whiteboard & Visual Notes</Text>
                 </View>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  Upload diagrams or snap whiteboard/handwritten notes with camera
+                </Text>
 
-                <TextInput
-                  style={[styles.textInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 8 }]}
-                  value={notePhotoUrl}
-                  onChangeText={setNotePhotoUrl}
-                  placeholder="Or paste photo/diagram URL..."
-                  placeholderTextColor={colors.textMuted}
-                />
+                {Boolean(notePhotoUrl) ? (
+                  <View style={{ marginTop: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 4 }}>
+                      <Image source={{ uri: notePhotoUrl }} style={{ width: 44, height: 44, borderRadius: 6 }} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={{ fontSize: 11.5, fontWeight: "600", color: colors.text }} numberOfLines={1}>
+                          {notePhotoName || "Photo Attached"}
+                        </Text>
+                        <Text style={{ fontSize: 10.5, color: "#16A34A" }}>✓ Diagram ready to save</Text>
+                      </View>
+                    </View>
 
-                {Boolean(notePhotoUrl) && (
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
-                    <Image source={{ uri: notePhotoUrl }} style={{ width: 40, height: 40, borderRadius: 6 }} />
-                    <Text style={{ flex: 1, marginLeft: 8, fontSize: 11, color: colors.textSecondary }} numberOfLines={1}>
-                      {notePhotoName || "Photo Attached"}
-                    </Text>
-                    <TouchableOpacity onPress={() => { setNotePhotoUrl(""); setNotePhotoName(""); }}>
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      <TouchableOpacity
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 }}
+                        onPress={handlePickNotePhoto}
+                      >
+                        <Ionicons name="images-outline" size={13} color="#7C3AED" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#7C3AED" }}>🔄 Replace (Gallery)</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 }}
+                        onPress={handleTakeNotePhoto}
+                      >
+                        <Ionicons name="camera-outline" size={13} color="#7C3AED" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#7C3AED" }}>📷 Retake (Camera)</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#FCA5A5", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 }}
+                        onPress={() => { setNotePhotoUrl(""); setNotePhotoName(""); }}
+                      >
+                        <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#EF4444" }}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ marginTop: 8 }}>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE", paddingVertical: 8, borderRadius: 8 }}
+                        onPress={handlePickNotePhoto}
+                      >
+                        <Ionicons name="images-outline" size={15} color="#7C3AED" />
+                        <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#7C3AED" }}>🖼️ Gallery Pick</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE", paddingVertical: 8, borderRadius: 8 }}
+                        onPress={handleTakeNotePhoto}
+                      >
+                        <Ionicons name="camera-outline" size={15} color="#7C3AED" />
+                        <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#7C3AED" }}>📷 Snap Whiteboard</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TextInput
+                      style={[styles.textInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 8 }]}
+                      value={notePhotoUrl}
+                      onChangeText={setNotePhotoUrl}
+                      placeholder="Or paste photo/diagram URL..."
+                      placeholderTextColor={colors.textMuted}
+                    />
                   </View>
                 )}
               </View>
 
               {/* PDF Document Attachment */}
               <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, marginTop: 10, backgroundColor: isDark ? colors.surface : "#F8FAFC" }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Ionicons name="document-text" size={16} color="#DC2626" />
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>PDF Document Attachment</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#DC2626", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
-                    onPress={handlePickNotePdf}
-                  >
-                    <Ionicons name="cloud-upload-outline" size={13} color="#DC2626" />
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#DC2626" }}>Attach PDF</Text>
-                  </TouchableOpacity>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="document-text" size={16} color="#DC2626" />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Notes PDF & Document Attachment</Text>
                 </View>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  Upload question bank, formula cheatsheet, or syllabus notes
+                </Text>
 
-                <TextInput
-                  style={[styles.textInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 8 }]}
-                  value={notePdfUrl}
-                  onChangeText={setNotePdfUrl}
-                  placeholder="Or paste PDF document URL..."
-                  placeholderTextColor={colors.textMuted}
-                />
+                {Boolean(notePdfUrl) ? (
+                  <View style={{ marginTop: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 4 }}>
+                      <Ionicons name="document-text" size={24} color="#DC2626" />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={{ fontSize: 11.5, fontWeight: "600", color: colors.text }} numberOfLines={1}>
+                          {notePdfName || "Document.pdf"}
+                        </Text>
+                        <Text style={{ fontSize: 10.5, color: "#16A34A" }}>✓ PDF Document ready to save</Text>
+                      </View>
+                    </View>
 
-                {Boolean(notePdfUrl) && (
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
-                    <Ionicons name="document-text" size={20} color="#DC2626" />
-                    <Text style={{ flex: 1, marginLeft: 8, fontSize: 11, color: colors.textSecondary }} numberOfLines={1}>
-                      {notePdfName || "Document.pdf"}
-                    </Text>
-                    <TouchableOpacity onPress={() => { setNotePdfUrl(""); setNotePdfName(""); }}>
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      <TouchableOpacity
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#DC2626", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 }}
+                        onPress={handlePickNotePdf}
+                      >
+                        <Ionicons name="cloud-upload-outline" size={13} color="#DC2626" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#DC2626" }}>🔄 Change / Replace PDF</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#FCA5A5", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6 }}
+                        onPress={() => { setNotePdfUrl(""); setNotePdfName(""); }}
+                      >
+                        <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#EF4444" }}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "#DC2626", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2", paddingVertical: 8, borderRadius: 8 }}
+                      onPress={handlePickNotePdf}
+                    >
+                      <Ionicons name="cloud-upload-outline" size={15} color="#DC2626" />
+                      <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#DC2626" }}>📄 Upload Notes PDF Document</Text>
                     </TouchableOpacity>
+
+                    <TextInput
+                      style={[styles.textInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 8 }]}
+                      value={notePdfUrl}
+                      onChangeText={setNotePdfUrl}
+                      placeholder="Or paste PDF document URL..."
+                      placeholderTextColor={colors.textMuted}
+                    />
                   </View>
                 )}
               </View>

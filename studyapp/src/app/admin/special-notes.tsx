@@ -57,6 +57,8 @@ export type SpecialNoteItem = {
   pdfName?: string;
   teacherName?: string;
   teacherId?: string;
+  authorRole?: "Faculty" | "Admin";
+  updatedByName?: string;
   targetClass?: string;
   createdAt?: any;
   updatedAt?: any;
@@ -183,11 +185,76 @@ export default function AdminSpecialNotesScreen() {
   // Current user info
   const [teacherName, setTeacherName] = useState("Prof. Ganesh Sharma");
 
-  // Load profile & real-time specialNotes from Firestore
+  // Faculty Directory List from Firestore
+  type FacultyOption = {
+    id: string;
+    name: string;
+    department?: string;
+    designation?: string;
+  };
+  const [facultyList, setFacultyList] = useState<FacultyOption[]>([]);
+
+  // Author & Faculty selector in Modal
+  const [formAuthorRole, setFormAuthorRole] = useState<"Faculty" | "Admin">("Faculty");
+  const [formTeacherName, setFormTeacherName] = useState("Prof. Ganesh Sharma");
+  const [formTeacherId, setFormTeacherId] = useState("TEACH-CSE-101");
+  const [uploadStatusMsg, setUploadStatusMsg] = useState("");
+
+  // Quick Template Helpers for Admin & Faculty
+  const NOTE_TEMPLATES = {
+    "10-mark": {
+      label: "+ 10-Mark Question",
+      text: "📌 Expected 10-Mark University Questions:\n\n1. [Q1 - 10 Marks]: Explain the fundamental architecture and working mechanism with a labeled diagram and real-world example.\n2. [Q2 - 10 Marks]: Formulate the mathematical proof/derivation and compare time & space complexities.\n3. [Q3 - 5+5 Marks]: (a) Define key properties and edge cases. (b) Solve the numerical problem step-by-step.",
+    },
+    formula: {
+      label: "+ Formula Sheet",
+      text: "📐 Formula Sheet & Quick Reference:\n\n• Core Formula 1: \n• Core Formula 2: \n• Boundary Conditions & Assumptions: \n• Shortcut / Derivation Trick: ",
+    },
+    "exam-tip": {
+      label: "+ Exam Tips",
+      text: "💡 High-Yield Exam Preparation Tips:\n\n• High-Weightage Topics: Focus on Unit 2 & Unit 4 (covers 45% marks).\n• Presentation Tip: Write stepwise answers with neat diagrams.\n• Common Pitfalls: Always check unit conversions before final calculation.",
+    },
+    lab: {
+      label: "+ Lab Guide",
+      text: "🔬 Lab Practical Guidelines & Viva Prep:\n\n• Objective & Aim: \n• Expected Input / Output Format: \n• Common Errors & Debugging Steps: \n• Top 3 Viva-Voce Questions: ",
+    },
+  };
+
+  const handleApplyTemplate = (key: keyof typeof NOTE_TEMPLATES) => {
+    const template = NOTE_TEMPLATES[key];
+    if (!template) return;
+    if (!formContent.trim()) {
+      setFormContent(template.text);
+    } else {
+      setFormContent((prev) => `${prev.trim()}\n\n---\n${template.text}`);
+    }
+  };
+
+  // Load profile, faculty directory & real-time specialNotes from Firestore
   useEffect(() => {
     const user = auth.currentUser;
     if (user?.displayName) setTeacherName(user.displayName);
 
+    // 1. Fetch Faculty list from Firestore for quick author picking
+    const facultyCol = collection(db, "faculty");
+    const qFaculty = query(facultyCol, orderBy("name", "asc"));
+    const unsubFaculty = onSnapshot(
+      qFaculty,
+      (snap) => {
+        const loaded: FacultyOption[] = snap.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name || "Faculty Member",
+          department: d.data().department || "",
+          designation: d.data().designation || "",
+        }));
+        setFacultyList(loaded);
+      },
+      (err) => {
+        console.warn("Faculty list listener error:", err.message);
+      }
+    );
+
+    // 2. Fetch Special Notes
     const notesRef = collection(db, "specialNotes");
     const q = query(notesRef, orderBy("createdAt", "desc"));
 
@@ -224,7 +291,10 @@ export default function AdminSpecialNotesScreen() {
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      unsubFaculty();
+      unsubscribe();
+    };
   }, []);
 
   // Compute unique subject list dynamically from notes and standard subjects
@@ -280,6 +350,10 @@ export default function AdminSpecialNotesScreen() {
     setFormPhotoName("");
     setFormPdfUrl("");
     setFormPdfName("");
+    setFormAuthorRole("Faculty");
+    setFormTeacherName(teacherName || "Prof. Ganesh Sharma");
+    setFormTeacherId("TEACH-CSE-101");
+    setUploadStatusMsg("");
     setModalOpen(true);
   };
 
@@ -296,10 +370,14 @@ export default function AdminSpecialNotesScreen() {
     setFormPhotoName(note.photoName || "");
     setFormPdfUrl(note.pdfUrl || "");
     setFormPdfName(note.pdfName || "");
+    setFormAuthorRole(note.authorRole || (note.teacherName?.toLowerCase().includes("admin") ? "Admin" : "Faculty"));
+    setFormTeacherName(note.teacherName || teacherName || "Prof. Ganesh Sharma");
+    setFormTeacherId(note.teacherId || "TEACH-CSE-101");
+    setUploadStatusMsg("");
     setModalOpen(true);
   };
 
-  // Pick Photo using ImagePicker
+  // Pick Photo using ImagePicker (Gallery)
   const handlePickPhoto = async () => {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -311,7 +389,7 @@ export default function AdminSpecialNotesScreen() {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        quality: 0.8,
+        quality: 0.85,
       });
 
       if (!res.canceled && res.assets && res.assets[0]?.uri) {
@@ -324,7 +402,32 @@ export default function AdminSpecialNotesScreen() {
     }
   };
 
-  // Pick PDF using DocumentPicker
+  // Capture Photo using Camera (Whiteboard / Handwritten Note)
+  const handleTakePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Camera Permission", "Please allow camera access to snap whiteboard or diagram photos.");
+        return;
+      }
+
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (!res.canceled && res.assets && res.assets[0]?.uri) {
+        const asset = res.assets[0];
+        setFormPhotoUrl(asset.uri);
+        setFormPhotoName(asset.fileName || `Whiteboard_${Date.now()}.jpg`);
+      }
+    } catch (e: any) {
+      Alert.alert("Camera Error", e?.message || "Could not snap photo.");
+    }
+  };
+
+  // Pick / Change PDF using DocumentPicker
   const handlePickPdf = async () => {
     try {
       setUploadingMedia(true);
@@ -332,7 +435,7 @@ export default function AdminSpecialNotesScreen() {
       if (file && file.uri) {
         setFormPdfUrl(file.uri);
         setFormPdfName(file.name || "Exam_Notes.pdf");
-        Alert.alert("PDF Attached", `Attached: ${file.name}`);
+        Alert.alert("PDF Document Attached", `Attached: ${file.name}\nReady to upload.`);
       }
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not pick PDF file.");
@@ -341,7 +444,23 @@ export default function AdminSpecialNotesScreen() {
     }
   };
 
-  // Save (Add or Update) Special Note
+  // Preview / Download Document
+  const handlePreviewDocument = async (url: string, name?: string) => {
+    if (!url) return;
+    try {
+      if (Platform.OS === "web") {
+        window.open(url, "_blank");
+      } else if (url.startsWith("http")) {
+        await Linking.openURL(url);
+      } else {
+        await shareOrDownloadPdf(url, name || "Special_Notes.pdf");
+      }
+    } catch (e: any) {
+      Alert.alert("Preview Error", e?.message || "Could not open document preview.");
+    }
+  };
+
+  // Save (Add or Update) Special Note with Cloud Storage Upload
   const handleSaveNote = async () => {
     if (!formTitle.trim()) {
       Alert.alert("Title Required", "Please enter a note or question title.");
@@ -364,14 +483,20 @@ export default function AdminSpecialNotesScreen() {
       // Upload local photo to Firebase Storage if not a web URL
       let finalPhotoUrl = formPhotoUrl.trim();
       if (finalPhotoUrl && !finalPhotoUrl.startsWith("http")) {
+        setUploadStatusMsg("Uploading whiteboard / diagram photo to cloud...");
         finalPhotoUrl = await uploadSpecialNoteFile(finalPhotoUrl, "photo", noteDocId);
       }
 
       // Upload local PDF to Firebase Storage if not a web URL
       let finalPdfUrl = formPdfUrl.trim();
       if (finalPdfUrl && !finalPdfUrl.startsWith("http")) {
+        setUploadStatusMsg("Uploading notes PDF document to cloud...");
         finalPdfUrl = await uploadSpecialNoteFile(finalPdfUrl, "pdf", noteDocId);
       }
+
+      setUploadStatusMsg("Saving note in database...");
+
+      const finalAuthorName = formTeacherName.trim() || (formAuthorRole === "Admin" ? "Admin Academic Office" : (teacherName || "Faculty Instructor"));
 
       const payload = {
         title: formTitle.trim(),
@@ -384,8 +509,10 @@ export default function AdminSpecialNotesScreen() {
         photoName: formPhotoName.trim() || "",
         pdfUrl: finalPdfUrl || "",
         pdfName: formPdfName.trim() || "",
-        teacherName: teacherName || "Faculty Instructor",
-        teacherId: "TEACH-CSE-101",
+        authorRole: formAuthorRole,
+        teacherName: finalAuthorName,
+        teacherId: formTeacherId.trim() || "TEACH-CSE-101",
+        updatedByName: teacherName || auth.currentUser?.displayName || "Admin",
         updatedAt: serverTimestamp(),
       };
 
@@ -394,11 +521,11 @@ export default function AdminSpecialNotesScreen() {
         await addDoc(collection(db, "activities"), {
           title: `Special Note Updated: ${formTitle.trim()}`,
           time: "Just now",
-          user: teacherName,
+          user: finalAuthorName,
           type: "notes",
           createdAt: serverTimestamp(),
         });
-        Alert.alert("Note Updated! 📝", `"${formTitle.trim()}" has been updated in Firebase.`);
+        Alert.alert("Note Updated! 📝", `"${formTitle.trim()}" has been updated and published to students.`);
       } else {
         await addDoc(collection(db, "specialNotes"), {
           ...payload,
@@ -407,7 +534,7 @@ export default function AdminSpecialNotesScreen() {
         await addDoc(collection(db, "activities"), {
           title: `New Special Note Published: ${formTitle.trim()}`,
           time: "Just now",
-          user: teacherName,
+          user: finalAuthorName,
           type: "notes",
           createdAt: serverTimestamp(),
         });
@@ -420,6 +547,7 @@ export default function AdminSpecialNotesScreen() {
       Alert.alert("Save Error", e?.message || "Could not save special note.");
     } finally {
       setSavingNote(false);
+      setUploadStatusMsg("");
     }
   };
 
@@ -688,10 +816,18 @@ export default function AdminSpecialNotesScreen() {
 
                   {/* Author / Date Footer */}
                   <View style={[styles.authorRow, { borderTopColor: colors.adminCardBorder }]}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Ionicons name="person-circle-outline" size={16} color={colors.adminTextSecondary} />
-                      <Text style={[styles.authorText, { color: colors.adminTextSecondary }]}>
-                        Faculty: <Text style={{ fontWeight: "700", color: colors.adminText }}>{item.teacherName || teacherName}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
+                      <Ionicons
+                        name={item.authorRole === "Admin" ? "shield-checkmark" : "school"}
+                        size={16}
+                        color={item.authorRole === "Admin" ? "#2563EB" : "#7C3AED"}
+                      />
+                      <Text style={[styles.authorText, { color: colors.adminTextSecondary }]} numberOfLines={1}>
+                        {item.authorRole === "Admin" ? "🛡️ Admin Office: " : "👨‍🏫 Faculty: "}
+                        <Text style={{ fontWeight: "700", color: colors.adminText }}>{item.teacherName || teacherName}</Text>
+                        {Boolean(item.updatedByName) && (
+                          <Text style={{ fontSize: 10, color: colors.adminTextSecondary }}> (Updated by {item.updatedByName})</Text>
+                        )}
                       </Text>
                     </View>
 
@@ -736,12 +872,12 @@ export default function AdminSpecialNotesScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
               {/* Modal Header */}
               <View style={styles.modalHeaderRow}>
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={[styles.modalHeading, { color: colors.adminText }]}>
                     {editingNote ? "Edit Special Note & Questions" : "Post Special Note & Questions"}
                   </Text>
                   <Text style={[styles.modalSubheading, { color: colors.adminTextSecondary }]}>
-                    Subject-wise questions, formulas, diagram photos, and PDF documents
+                    Admin & Faculty can change notes, attach formulas, whiteboard photos & PDF documents
                   </Text>
                 </View>
 
@@ -751,6 +887,124 @@ export default function AdminSpecialNotesScreen() {
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
+                {/* 1. AUTHOR & AUTHORITY ROLE SELECTION */}
+                <Text style={[styles.formLabel, { color: colors.adminText }]}>Author & Issuer Role *</Text>
+                <View style={styles.roleToggleRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleToggleBtn,
+                      {
+                        backgroundColor: formAuthorRole === "Faculty" ? (isDark ? "rgba(124,58,237,0.25)" : "#EDE9FE") : colors.adminSurfaceAlt,
+                        borderColor: formAuthorRole === "Faculty" ? "#7C3AED" : colors.adminCardBorder,
+                      },
+                    ]}
+                    onPress={() => {
+                      setFormAuthorRole("Faculty");
+                      if (formTeacherName.toLowerCase().includes("admin") || formTeacherName.toLowerCase().includes("office")) {
+                        setFormTeacherName(teacherName || "Prof. Ganesh Sharma");
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="school" size={16} color={formAuthorRole === "Faculty" ? "#7C3AED" : colors.adminTextSecondary} />
+                    <Text style={[styles.roleToggleBtnText, { color: formAuthorRole === "Faculty" ? "#7C3AED" : colors.adminTextSecondary }]}>
+                      👨‍🏫 Faculty Member
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.roleToggleBtn,
+                      {
+                        backgroundColor: formAuthorRole === "Admin" ? (isDark ? "rgba(37,99,235,0.25)" : "#DBEAFE") : colors.adminSurfaceAlt,
+                        borderColor: formAuthorRole === "Admin" ? "#2563EB" : colors.adminCardBorder,
+                      },
+                    ]}
+                    onPress={() => {
+                      setFormAuthorRole("Admin");
+                      if (!formTeacherName.toLowerCase().includes("admin") && !formTeacherName.toLowerCase().includes("cell") && !formTeacherName.toLowerCase().includes("office")) {
+                        setFormTeacherName("Admin Academic Office");
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="shield-checkmark" size={16} color={formAuthorRole === "Admin" ? "#2563EB" : colors.adminTextSecondary} />
+                    <Text style={[styles.roleToggleBtnText, { color: formAuthorRole === "Admin" ? "#2563EB" : colors.adminTextSecondary }]}>
+                      🛡️ Admin Office
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Quick Author Chips */}
+                {formAuthorRole === "Faculty" ? (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 11, color: colors.adminTextSecondary, marginBottom: 4 }}>
+                      Quick Select Faculty Member:
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {(facultyList.length > 0
+                        ? facultyList.map((f) => f.name)
+                        : ["Prof. Ganesh Sharma", "Dr. Rahul Sharma", "Prof. Kumar", "Dr. Anita Rao", "Prof. Vikram Malhotra"]
+                      ).map((facName) => {
+                        const isSel = formTeacherName.toLowerCase() === facName.toLowerCase();
+                        return (
+                          <TouchableOpacity
+                            key={facName}
+                            style={[
+                              styles.subChip,
+                              {
+                                backgroundColor: isSel ? "#7C3AED" : colors.adminSurfaceAlt,
+                                borderColor: isSel ? "#7C3AED" : colors.adminCardBorder,
+                              },
+                            ]}
+                            onPress={() => setFormTeacherName(facName)}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: "600", color: isSel ? "#FFFFFF" : colors.adminTextSecondary }}>
+                              {facName}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                ) : (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 11, color: colors.adminTextSecondary, marginBottom: 4 }}>
+                      Quick Select Admin Authority:
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {["Admin Academic Office", "Examination Cell", "Dean of Academics", "HOD Office"].map((adminTitle) => {
+                        const isSel = formTeacherName.toLowerCase() === adminTitle.toLowerCase();
+                        return (
+                          <TouchableOpacity
+                            key={adminTitle}
+                            style={[
+                              styles.subChip,
+                              {
+                                backgroundColor: isSel ? "#2563EB" : colors.adminSurfaceAlt,
+                                borderColor: isSel ? "#2563EB" : colors.adminCardBorder,
+                              },
+                            ]}
+                            onPress={() => setFormTeacherName(adminTitle)}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: "600", color: isSel ? "#FFFFFF" : colors.adminTextSecondary }}>
+                              {adminTitle}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+
+                <TextInput
+                  style={[styles.modalInput, { backgroundColor: colors.adminInputBg, borderColor: colors.adminInputBorder, color: colors.adminText, marginBottom: 10 }]}
+                  value={formTeacherName}
+                  onChangeText={setFormTeacherName}
+                  placeholder={formAuthorRole === "Faculty" ? "Faculty Author Name & Designation" : "Admin Office / Authority Name"}
+                  placeholderTextColor={colors.adminTextSecondary}
+                />
+
                 {/* Title */}
                 <Text style={[styles.formLabel, { color: colors.adminText }]}>Note / Question Title *</Text>
                 <TextInput
@@ -862,8 +1116,34 @@ export default function AdminSpecialNotesScreen() {
                   placeholderTextColor={colors.adminTextSecondary}
                 />
 
-                {/* Content */}
-                <Text style={[styles.formLabel, { color: colors.adminText, marginTop: 12 }]}>Questions / Notes Content *</Text>
+                {/* Content with Quick Template Chips */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.adminText, marginBottom: 0 }]}>Questions / Notes Content *</Text>
+                  <Text style={{ fontSize: 11, color: "#7C3AED", fontWeight: "700" }}>⚡ Quick Templates</Text>
+                </View>
+
+                <View style={styles.templateBar}>
+                  {(["10-mark", "formula", "exam-tip", "lab"] as const).map((tKey) => {
+                    const tInfo = NOTE_TEMPLATES[tKey];
+                    return (
+                      <TouchableOpacity
+                        key={tKey}
+                        style={[
+                          styles.templateChip,
+                          {
+                            backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE",
+                            borderColor: isDark ? "#6D28D9" : "#C4B5FD",
+                          },
+                        ]}
+                        onPress={() => handleApplyTemplate(tKey)}
+                      >
+                        <Ionicons name="flash-outline" size={11} color="#7C3AED" />
+                        <Text style={[styles.templateChipText, { color: "#7C3AED" }]}>{tInfo.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
                 <TextInput
                   style={[
                     styles.modalInput,
@@ -877,96 +1157,192 @@ export default function AdminSpecialNotesScreen() {
                   multiline
                 />
 
-                {/* PHOTO SYSTEM IN MODAL */}
+                {/* PHOTO / DIAGRAM / WHITEBOARD NOTES SYSTEM */}
                 <View style={[styles.attachmentBox, { backgroundColor: colors.adminSurfaceAlt, borderColor: colors.adminCardBorder }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Ionicons name="image" size={17} color="#7C3AED" />
-                      <Text style={[styles.attachTitle, { color: colors.adminText }]}>Photo / Diagram System</Text>
+                      <Text style={[styles.attachTitle, { color: colors.adminText }]}>Visual Notes & Whiteboard Diagrams</Text>
                     </View>
-                    <TouchableOpacity style={styles.pickAttachBtn} onPress={handlePickPhoto}>
-                      <Ionicons name="camera-outline" size={14} color="#7C3AED" />
-                      <Text style={styles.pickAttachBtnText}>Pick Photo</Text>
-                    </TouchableOpacity>
                   </View>
+                  <Text style={{ fontSize: 11, color: colors.adminTextSecondary, marginTop: 2 }}>
+                    Upload diagrams or snap whiteboard/handwritten notes with camera
+                  </Text>
 
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: colors.adminInputBg, borderColor: colors.adminInputBorder, color: colors.adminText, marginTop: 8 }]}
-                    value={formPhotoUrl}
-                    onChangeText={(val) => {
-                      setFormPhotoUrl(val);
-                      if (!formPhotoName && val) setFormPhotoName("Diagram_Image.jpg");
-                    }}
-                    placeholder="Or paste photo/diagram image URL..."
-                    placeholderTextColor={colors.adminTextSecondary}
-                  />
-
-                  {Boolean(formPhotoUrl) && (
-                    <View style={styles.previewAttachmentRow}>
-                      <Image source={{ uri: formPhotoUrl }} style={styles.miniPhotoThumb} />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={[styles.mediaFilenameText, { color: colors.adminText }]} numberOfLines={1}>
-                          {formPhotoName || "Photo Attached"}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: "#16A34A" }}>✓ Ready to publish</Text>
+                  {Boolean(formPhotoUrl) ? (
+                    <View style={{ marginTop: 8 }}>
+                      <View style={styles.previewAttachmentRow}>
+                        <Image source={{ uri: formPhotoUrl }} style={styles.miniPhotoThumb} />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={[styles.mediaFilenameText, { color: colors.adminText }]} numberOfLines={1}>
+                            {formPhotoName || "Diagram_Attached.jpg"}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#16A34A" }}>✓ Photo Attached & Ready to Save</Text>
+                        </View>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setFormPhotoUrl("");
-                          setFormPhotoName("");
+
+                      {/* Replace / View / Remove Action Row */}
+                      <View style={styles.replaceActionRow}>
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE" }]}
+                          onPress={handlePickPhoto}
+                        >
+                          <Ionicons name="images-outline" size={13} color="#7C3AED" />
+                          <Text style={[styles.actionSmallBtnText, { color: "#7C3AED" }]}>🔄 Replace (Gallery)</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE" }]}
+                          onPress={handleTakePhoto}
+                        >
+                          <Ionicons name="camera-outline" size={13} color="#7C3AED" />
+                          <Text style={[styles.actionSmallBtnText, { color: "#7C3AED" }]}>📷 Retake (Camera)</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: colors.adminCardBorder, backgroundColor: colors.adminCard }]}
+                          onPress={() => setFullPhotoUrl(formPhotoUrl)}
+                        >
+                          <Ionicons name="eye-outline" size={13} color={colors.adminText} />
+                          <Text style={[styles.actionSmallBtnText, { color: colors.adminText }]}>👁️ View</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: "#FCA5A5", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2" }]}
+                          onPress={() => {
+                            setFormPhotoUrl("");
+                            setFormPhotoName("");
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                          <Text style={[styles.actionSmallBtnText, { color: "#EF4444" }]}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View>
+                      <View style={styles.uploadBigBtnRow}>
+                        <TouchableOpacity
+                          style={[styles.uploadBigBtn, { borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE" }]}
+                          onPress={handlePickPhoto}
+                        >
+                          <Ionicons name="images-outline" size={16} color="#7C3AED" />
+                          <Text style={[styles.uploadBigBtnText, { color: "#7C3AED" }]}>🖼️ Gallery Pick</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.uploadBigBtn, { borderColor: "#7C3AED", backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#EDE9FE" }]}
+                          onPress={handleTakePhoto}
+                        >
+                          <Ionicons name="camera-outline" size={16} color="#7C3AED" />
+                          <Text style={[styles.uploadBigBtnText, { color: "#7C3AED" }]}>📷 Snap Whiteboard</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <TextInput
+                        style={[styles.modalInput, { backgroundColor: colors.adminInputBg, borderColor: colors.adminInputBorder, color: colors.adminText, marginTop: 8 }]}
+                        value={formPhotoUrl}
+                        onChangeText={(val) => {
+                          setFormPhotoUrl(val);
+                          if (!formPhotoName && val) setFormPhotoName("Diagram_Image.jpg");
                         }}
-                        style={styles.removeMediaBtn}
-                      >
-                        <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                      </TouchableOpacity>
+                        placeholder="Or paste direct diagram image URL..."
+                        placeholderTextColor={colors.adminTextSecondary}
+                      />
                     </View>
                   )}
                 </View>
 
-                {/* PDF SYSTEM IN MODAL */}
+                {/* PDF DOCUMENT SYSTEM IN MODAL */}
                 <View style={[styles.attachmentBox, { backgroundColor: colors.adminSurfaceAlt, borderColor: colors.adminCardBorder, marginTop: 10 }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Ionicons name="document-text" size={17} color="#DC2626" />
-                      <Text style={[styles.attachTitle, { color: colors.adminText }]}>PDF Document System</Text>
+                      <Text style={[styles.attachTitle, { color: colors.adminText }]}>Notes PDF & Document Attachment</Text>
                     </View>
-                    <TouchableOpacity style={[styles.pickAttachBtn, { borderColor: "#DC2626" }]} onPress={handlePickPdf}>
-                      <Ionicons name="cloud-upload-outline" size={14} color="#DC2626" />
-                      <Text style={[styles.pickAttachBtnText, { color: "#DC2626" }]}>Attach PDF</Text>
-                    </TouchableOpacity>
                   </View>
+                  <Text style={{ fontSize: 11, color: colors.adminTextSecondary, marginTop: 2 }}>
+                    Upload questions PDF, handwritten notes scan, or formula cheatsheet
+                  </Text>
 
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: colors.adminInputBg, borderColor: colors.adminInputBorder, color: colors.adminText, marginTop: 8 }]}
-                    value={formPdfUrl}
-                    onChangeText={(val) => {
-                      setFormPdfUrl(val);
-                      if (!formPdfName && val) setFormPdfName("Special_Notes.pdf");
-                    }}
-                    placeholder="Or paste PDF document URL..."
-                    placeholderTextColor={colors.adminTextSecondary}
-                  />
+                  {Boolean(formPdfUrl) ? (
+                    <View style={{ marginTop: 8 }}>
+                      <View style={styles.previewAttachmentRow}>
+                        <View style={[styles.pdfIconCircle, { width: 34, height: 34 }]}>
+                          <Ionicons name="document-text" size={18} color="#DC2626" />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={[styles.mediaFilenameText, { color: colors.adminText }]} numberOfLines={1}>
+                            {formPdfName || "Document.pdf"}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#16A34A" }}>✓ PDF Document Attached & Ready</Text>
+                        </View>
+                      </View>
 
-                  {Boolean(formPdfUrl) && (
-                    <View style={styles.previewAttachmentRow}>
-                      <View style={[styles.pdfIconCircle, { width: 34, height: 34 }]}>
-                        <Ionicons name="document-text" size={18} color="#DC2626" />
+                      {/* Replace / Preview / Remove Action Row */}
+                      <View style={styles.replaceActionRow}>
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: "#DC2626", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2" }]}
+                          onPress={handlePickPdf}
+                        >
+                          <Ionicons name="cloud-upload-outline" size={13} color="#DC2626" />
+                          <Text style={[styles.actionSmallBtnText, { color: "#DC2626" }]}>🔄 Change / Replace PDF</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: colors.adminCardBorder, backgroundColor: colors.adminCard }]}
+                          onPress={() => handlePreviewDocument(formPdfUrl, formPdfName)}
+                        >
+                          <Ionicons name="open-outline" size={13} color={colors.adminText} />
+                          <Text style={[styles.actionSmallBtnText, { color: colors.adminText }]}>👁️ Preview</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionSmallBtn, { borderColor: "#FCA5A5", backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEE2E2" }]}
+                          onPress={() => {
+                            setFormPdfUrl("");
+                            setFormPdfName("");
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                          <Text style={[styles.actionSmallBtnText, { color: "#EF4444" }]}>Remove</Text>
+                        </TouchableOpacity>
                       </View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={[styles.mediaFilenameText, { color: colors.adminText }]} numberOfLines={1}>
-                          {formPdfName || "Document.pdf"}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: "#16A34A" }}>✓ PDF Attached</Text>
-                      </View>
+                    </View>
+                  ) : (
+                    <View>
                       <TouchableOpacity
-                        onPress={() => {
-                          setFormPdfUrl("");
-                          setFormPdfName("");
-                        }}
-                        style={styles.removeMediaBtn}
+                        style={[
+                          styles.uploadBigBtn,
+                          {
+                            borderColor: "#DC2626",
+                            backgroundColor: isDark ? "rgba(239,68,68,0.15)" : "#FEF2F2",
+                            marginTop: 8,
+                          },
+                        ]}
+                        onPress={handlePickPdf}
+                        disabled={uploadingMedia}
                       >
-                        <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                        {uploadingMedia ? (
+                          <ActivityIndicator size="small" color="#DC2626" />
+                        ) : (
+                          <>
+                            <Ionicons name="cloud-upload-outline" size={16} color="#DC2626" />
+                            <Text style={[styles.uploadBigBtnText, { color: "#DC2626" }]}>📄 Upload Notes PDF Document</Text>
+                          </>
+                        )}
                       </TouchableOpacity>
+
+                      <TextInput
+                        style={[styles.modalInput, { backgroundColor: colors.adminInputBg, borderColor: colors.adminInputBorder, color: colors.adminText, marginTop: 8 }]}
+                        value={formPdfUrl}
+                        onChangeText={(val) => {
+                          setFormPdfUrl(val);
+                          if (!formPdfName && val) setFormPdfName("Special_Notes.pdf");
+                        }}
+                        placeholder="Or paste PDF document URL..."
+                        placeholderTextColor={colors.adminTextSecondary}
+                      />
                     </View>
                   )}
                 </View>
@@ -985,7 +1361,7 @@ export default function AdminSpecialNotesScreen() {
                   </TouchableOpacity>
                 )}
 
-                <View style={{ flexDirection: "row", gap: 10, marginLeft: "auto" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginLeft: "auto" }}>
                   <TouchableOpacity
                     style={[styles.modalCancelBtn, { backgroundColor: colors.adminSurfaceAlt }]}
                     onPress={() => setModalOpen(false)}
@@ -996,10 +1372,13 @@ export default function AdminSpecialNotesScreen() {
 
                   <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveNote} disabled={savingNote}>
                     {savingNote ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={styles.modalSaveBtnText}>{uploadStatusMsg || "Saving..."}</Text>
+                      </View>
                     ) : (
                       <Text style={styles.modalSaveBtnText}>
-                        {editingNote ? "Update Note" : "Publish Special Note"}
+                        {editingNote ? "Update & Save Note" : "Upload & Publish Special Note"}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -1491,6 +1870,84 @@ const styles = StyleSheet.create({
   },
   removeMediaBtn: {
     padding: 6,
+  },
+
+  roleToggleRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  roleToggleBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1.5,
+  },
+  roleToggleBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  templateBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  templateChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  templateChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  replaceActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  actionSmallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  actionSmallBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  uploadBigBtnRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+  },
+  uploadBigBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  uploadBigBtnText: {
+    fontSize: 11.5,
+    fontWeight: "700",
   },
 
   modalFooterRow: {

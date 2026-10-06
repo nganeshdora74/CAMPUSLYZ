@@ -67,6 +67,20 @@ export default function CertificateScreen() {
   const [purpose, setPurpose] = useState("");
   const [requests, setRequests] = useState<any[]>([]);
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [studentProfile, setStudentProfile] = useState<any>(null);
+
+  // 0. Real-time Student Profile from Firestore
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const userRef = doc(db, "users", user.uid);
+    const unsub = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        setStudentProfile(snap.data());
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // 1. Real-time Certificates Sync from Firestore
   useEffect(() => {
@@ -110,7 +124,7 @@ export default function CertificateScreen() {
     }
   }, []);
 
-  // 2. Load Student Requests from Firestore
+  // 2. Load Student Requests from Firestore (filtered for current student)
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -119,13 +133,58 @@ export default function CertificateScreen() {
       const q = query(collection(db, "certificateRequests"), orderBy("createdAt", "desc"));
       const unsub = onSnapshot(q, (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setRequests(list);
+        const myRequests = list.filter(
+          (r: any) =>
+            r.studentId === user.uid ||
+            (user.email && r.studentEmail?.toLowerCase() === user.email.toLowerCase())
+        );
+        setRequests(myRequests);
       });
       return () => unsub();
     } catch (e) {
       console.warn("Requests snap error:", e);
     }
   }, []);
+
+  // Filter certificates awarded to this student
+  const myCertificates = certificates.filter((c) => {
+    const user = auth.currentUser;
+    if (!user) return true;
+    return (
+      c.studentId === user.uid ||
+      (studentProfile?.rollNo && c.studentRollNo === studentProfile.rollNo) ||
+      (user.email && c.studentName?.toLowerCase() === (studentProfile?.fullName || user.displayName || "").toLowerCase()) ||
+      c.studentId === "student"
+    );
+  });
+
+  // Open preview for an approved certificate request
+  const handleViewApprovedCert = (req: any) => {
+    const matchedCert = certificates.find(
+      (c) => c.id === req.issuedCertificateId || (req.credentialId && c.credentialId === req.credentialId)
+    );
+    if (matchedCert) {
+      setSelectedCert(matchedCert);
+      setCertModalVisible(true);
+    } else {
+      setSelectedCert({
+        id: req.id,
+        studentName: req.studentName || studentProfile?.fullName || "Student",
+        studentRollNo: req.studentRollNo || studentProfile?.rollNo || "23CSE001",
+        title: req.certificateType || "Official Academic Certificate",
+        subject: req.purpose ? `Conferred for: ${req.purpose}` : "Official Credential",
+        grade: "Verified & Issued",
+        issueDate: "2026",
+        issuedBy: "Office of the Registrar & Academic Dean",
+        issuerTitle: "Academic Credential Authority",
+        credentialId: req.credentialId || `CAMP-${req.id.slice(0, 6).toUpperCase()}`,
+        description: `Official ${req.certificateType} issued to ${req.studentName} upon request for ${req.purpose}.`,
+        pdfUrl: req.pdfUrl || undefined,
+        verified: true,
+      });
+      setCertModalVisible(true);
+    }
+  };
 
   // Submit Student Request
   const submitRequest = async () => {
@@ -141,9 +200,17 @@ export default function CertificateScreen() {
 
     try {
       setSubmittingRequest(true);
+      const studentFullName = studentProfile?.fullName || studentProfile?.name || user.displayName || "Student";
+      const studentRoll = studentProfile?.rollNo || "23CSE001";
+      const studentDept = studentProfile?.department || studentProfile?.branch || "CSE";
+      const studentSem = studentProfile?.semester || "4";
+
       await addDoc(collection(db, "certificateRequests"), {
         studentId: user.uid,
-        studentName: user.displayName || "Campusly Student",
+        studentName: studentFullName,
+        studentRollNo: studentRoll,
+        studentDepartment: studentDept,
+        studentSemester: studentSem,
         studentEmail: user.email || "",
         certificateType: certificateType.trim(),
         purpose: purpose.trim(),
@@ -154,7 +221,10 @@ export default function CertificateScreen() {
 
       setCertificateType("");
       setPurpose("");
-      Alert.alert("Request Submitted", "Your certificate request has been forwarded to the college administration.");
+      Alert.alert(
+        "Request Submitted! 📄",
+        "Your certificate request has been forwarded to the college administration. Once the admin issues your certificate, your official print-ready PDF credential will appear directly here in real-time."
+      );
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Unable to submit certificate request.");
     } finally {
@@ -253,48 +323,80 @@ export default function CertificateScreen() {
               Certificates awarded and updated directly by your college faculty
             </Text>
 
-            {certificates.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.certCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                activeOpacity={0.85}
-                onPress={() => {
-                  setSelectedCert(item);
-                  setCertModalVisible(true);
-                }}
-              >
-                <View style={styles.certCardTop}>
-                  <View style={styles.certBadgeCircle}>
-                    <Ionicons name="ribbon" size={24} color="#D97706" />
+            {myCertificates.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 12 }]}>
+                <Ionicons name="ribbon-outline" size={48} color={colors.textMuted} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No Certificates Awarded Yet</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4, textAlign: "center" }}>
+                  You don't have any issued certificates on record yet. You can request a Bonafide or Course Completion certificate from the "Request Official" tab above.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.emptyActionBtn, { backgroundColor: colors.primary, marginTop: 14 }]}
+                  onPress={() => setActiveTab("request")}
+                >
+                  <Ionicons name="document-text-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.emptyActionBtnText}>Request a Certificate</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              myCertificates.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.certCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    setSelectedCert(item);
+                    setCertModalVisible(true);
+                  }}
+                >
+                  <View style={styles.certCardTop}>
+                    <View style={styles.certBadgeCircle}>
+                      <Ionicons name="ribbon" size={24} color="#D97706" />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[styles.certTitle, { color: colors.text }]}>{item.title}</Text>
+                      <Text style={[styles.certSubject, { color: colors.primary }]}>{item.subject}</Text>
+                    </View>
+                    <View style={styles.verifiedPill}>
+                      <Ionicons name="checkmark-circle" size={13} color="#16A34A" />
+                      <Text style={styles.verifiedPillText}>Verified</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.certTitle, { color: colors.text }]}>{item.title}</Text>
-                    <Text style={[styles.certSubject, { color: colors.primary }]}>{item.subject}</Text>
-                  </View>
-                  <View style={styles.verifiedPill}>
-                    <Ionicons name="checkmark-circle" size={13} color="#16A34A" />
-                    <Text style={styles.verifiedPillText}>Verified</Text>
-                  </View>
-                </View>
 
-                <View style={[styles.certDivider, { backgroundColor: colors.border }]} />
+                  <View style={[styles.certDivider, { backgroundColor: colors.border }]} />
 
-                <View style={styles.certCardBottom}>
-                  <View>
-                    <Text style={[styles.certTeacherText, { color: colors.text }]}>
-                      Issued by: <Text style={{ fontWeight: "700" }}>{item.issuedBy}</Text>
-                    </Text>
-                    <Text style={[styles.certDateText, { color: colors.textSecondary }]}>
-                      Date: {item.issueDate} • ID: {item.credentialId}
-                    </Text>
-                  </View>
+                  <View style={styles.certCardBottom}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.certTeacherText, { color: colors.text }]}>
+                        Issued by: <Text style={{ fontWeight: "700" }}>{item.issuedBy}</Text>
+                      </Text>
+                      <Text style={[styles.certDateText, { color: colors.textSecondary }]}>
+                        Date: {item.issueDate} • ID: {item.credentialId}
+                      </Text>
+                    </View>
 
-                  <View style={styles.viewBadge}>
-                    <Text style={styles.viewBadgeText}>View Official →</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      {item.pdfUrl ? (
+                        <TouchableOpacity
+                          style={styles.pdfDownloadMiniBtn}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            shareOrDownloadPdf(item.pdfUrl!, item.title);
+                          }}
+                        >
+                          <Ionicons name="download-outline" size={14} color="#DC2626" />
+                          <Text style={styles.pdfDownloadMiniText}>PDF</Text>
+                        </TouchableOpacity>
+                      ) : null}
+
+                      <View style={styles.viewBadge}>
+                        <Text style={styles.viewBadgeText}>View Official →</Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         ) : (
           /* TAB 2: REQUEST CERTIFICATES */
@@ -307,22 +409,96 @@ export default function CertificateScreen() {
             </Text>
 
             <View style={[styles.requestFormCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Certificate Type *</Text>
+              {/* Profile confirmation badge */}
+              <View style={[styles.studentProfileBar, { backgroundColor: isDark ? "#1E293B" : "#F1F5F9" }]}>
+                <Ionicons name="person-circle" size={20} color={colors.primary} />
+                <Text style={[styles.studentProfileBarText, { color: colors.text }]}>
+                  Requesting as: <Text style={{ fontWeight: "700" }}>{studentProfile?.fullName || auth.currentUser?.displayName || "Student"}</Text> • Roll: <Text style={{ fontWeight: "700" }}>{studentProfile?.rollNo || "23CSE001"}</Text> ({studentProfile?.department || "CSE"})
+                </Text>
+              </View>
+
+              <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Certificate Type *</Text>
+              {/* Preset Chips */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {[
+                  "Bonafide Certificate",
+                  "Course Completion Letter",
+                  "Character Certificate",
+                  "Academic Merit Certificate",
+                  "Internship NOC / Recommendation",
+                ].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.typeChip,
+                      {
+                        backgroundColor: certificateType === type ? colors.primary : colors.surface,
+                        borderColor: certificateType === type ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setCertificateType(type)}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: certificateType === type ? "#FFFFFF" : colors.textSecondary,
+                        fontWeight: certificateType === type ? "700" : "500",
+                      }}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               <TextInput
                 style={[styles.formInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                placeholder="e.g. Bonafide Certificate / Character Certificate"
+                placeholder="Or type custom certificate type..."
                 placeholderTextColor={colors.textMuted}
                 value={certificateType}
                 onChangeText={setCertificateType}
               />
 
-              <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Purpose / Reason *</Text>
+              <Text style={[styles.formLabel, { color: colors.text, marginTop: 14 }]}>Purpose / Reason *</Text>
+              {/* Preset Purpose Chips */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {[
+                  "Higher Studies",
+                  "Internship / Placement",
+                  "Bank Education Loan",
+                  "Passport / Visa",
+                  "Scholarship Application",
+                ].map((p) => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[
+                      styles.typeChip,
+                      {
+                        backgroundColor: purpose === p ? colors.primary : colors.surface,
+                        borderColor: purpose === p ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setPurpose(p)}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: purpose === p ? "#FFFFFF" : colors.textSecondary,
+                        fontWeight: purpose === p ? "700" : "500",
+                      }}
+                    >
+                      {p}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               <TextInput
                 style={[
                   styles.formInput,
-                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, minHeight: 80, textAlignVertical: "top" },
+                  { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, minHeight: 70, textAlignVertical: "top" },
                 ]}
-                placeholder="Why do you require this certificate? (e.g. Internship, Bank, Passport)"
+                placeholder="Why do you require this certificate? (e.g. For bank loan, passport, higher studies)"
                 placeholderTextColor={colors.textMuted}
                 multiline
                 numberOfLines={3}
@@ -340,47 +516,147 @@ export default function CertificateScreen() {
                 ) : (
                   <>
                     <Ionicons name="paper-plane" size={16} color="#FFFFFF" />
-                    <Text style={styles.submitRequestBtnText}>Submit Request</Text>
+                    <Text style={styles.submitRequestBtnText}>Submit Certificate Request</Text>
                   </>
                 )}
               </TouchableOpacity>
             </View>
 
             {/* Previous Requests Track */}
-            <Text style={[styles.sectionHeading, { color: colors.text, marginTop: 20 }]}>
+            <Text style={[styles.sectionHeading, { color: colors.text, marginTop: 24 }]}>
               Request Status Tracker
             </Text>
 
             {requests.length === 0 ? (
-              <Text style={{ textAlign: "center", color: colors.textSecondary, marginTop: 14 }}>
-                No active certificate requests.
-              </Text>
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 10 }]}>
+                <Ionicons name="mail-outline" size={38} color={colors.textMuted} />
+                <Text style={[styles.emptyTitle, { color: colors.text, fontSize: 14 }]}>No Active Certificate Requests</Text>
+                <Text style={{ textAlign: "center", color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                  Submit a request above and the college administration will review, generate, and issue your official certificate.
+                </Text>
+              </View>
             ) : (
-              requests.map((req) => (
-                <View
-                  key={req.id}
-                  style={[styles.requestTrackCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.requestTrackTitle, { color: colors.text }]}>
-                      {req.certificateType}
-                    </Text>
-                    <Text style={[styles.requestTrackPurpose, { color: colors.textSecondary }]}>
-                      Purpose: {req.purpose}
-                    </Text>
-                    <View style={styles.statusPill}>
-                      <Text style={styles.statusPillText}>Status: {req.status || "Pending"}</Text>
-                    </View>
-                  </View>
+              requests.map((req) => {
+                const isApproved = req.status === "Approved";
+                const isRejected = req.status === "Rejected";
 
-                  <TouchableOpacity
-                    style={styles.cancelRequestBtn}
-                    onPress={() => deleteRequest(req.id)}
+                return (
+                  <View
+                    key={req.id}
+                    style={[
+                      styles.requestTrackCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: isApproved ? "#86EFAC" : isRejected ? "#FCA5A5" : colors.border,
+                      },
+                    ]}
                   >
-                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ))
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Ionicons name="ribbon" size={17} color={isApproved ? "#16A34A" : isRejected ? "#DC2626" : colors.primary} />
+                          <Text style={[styles.requestTrackTitle, { color: colors.text }]}>
+                            {req.certificateType}
+                          </Text>
+                        </View>
+
+                        {/* Status badge */}
+                        <View
+                          style={[
+                            styles.statusPill,
+                            isApproved
+                              ? { backgroundColor: "#DCFCE7" }
+                              : isRejected
+                              ? { backgroundColor: "#FEE2E2" }
+                              : { backgroundColor: "#FEF3C7" },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isApproved ? "checkmark-circle" : isRejected ? "close-circle" : "time"}
+                            size={12}
+                            color={isApproved ? "#16A34A" : isRejected ? "#DC2626" : "#D97706"}
+                          />
+                          <Text
+                            style={[
+                              styles.statusPillText,
+                              { color: isApproved ? "#16A34A" : isRejected ? "#DC2626" : "#D97706" },
+                            ]}
+                          >
+                            {isApproved ? "Approved & Issued" : isRejected ? "Declined" : "Under Admin Review"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={[styles.requestTrackPurpose, { color: colors.textSecondary, marginTop: 6 }]}>
+                        Purpose: "{req.purpose}"
+                      </Text>
+
+                      {/* If Approved: show Credential ID, PDF action button, & admin note */}
+                      {isApproved && (
+                        <View style={[styles.approvedTrackBox, { backgroundColor: isDark ? "#064E3B" : "#F0FDF4", borderColor: "#86EFAC" }]}>
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                            {req.credentialId ? (
+                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#16A34A" }}>
+                                Credential ID: {req.credentialId}
+                              </Text>
+                            ) : null}
+                            {req.adminComment ? (
+                              <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                Note: {req.adminComment}
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                            {req.pdfUrl ? (
+                              <TouchableOpacity
+                                style={styles.downloadTrackPdfBtn}
+                                onPress={() => shareOrDownloadPdf(req.pdfUrl, req.certificateType)}
+                              >
+                                <Ionicons name="document-text" size={14} color="#FFFFFF" />
+                                <Text style={styles.downloadTrackPdfBtnText}>Download Official PDF</Text>
+                              </TouchableOpacity>
+                            ) : null}
+
+                            <TouchableOpacity
+                              style={styles.viewTrackCertBtn}
+                              onPress={() => handleViewApprovedCert(req)}
+                            >
+                              <Ionicons name="eye-outline" size={14} color="#16A34A" />
+                              <Text style={styles.viewTrackCertBtnText}>View Official Certificate</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* If Rejected: show rejection explanation */}
+                      {isRejected && (
+                        <View style={[styles.rejectedTrackBox, { backgroundColor: isDark ? "#450A0A" : "#FEF2F2", borderColor: "#FCA5A5" }]}>
+                          <Text style={{ fontSize: 12, color: "#DC2626", fontWeight: "700" }}>
+                            Admin Note: {req.adminComment || "Request could not be approved by college administration."}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* If Pending: notice */}
+                      {!isApproved && !isRejected && (
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+                          The administration is reviewing your request. Once issued, your official certificate PDF will be available here.
+                        </Text>
+                      )}
+                    </View>
+
+                    {!isApproved && (
+                      <TouchableOpacity
+                        style={styles.cancelRequestBtn}
+                        onPress={() => deleteRequest(req.id)}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
             )}
           </View>
         )}
@@ -771,23 +1047,124 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  statusPill: {
-    backgroundColor: "#FEF3C7",
+  pdfDownloadMiniBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FEE2E2",
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: "flex-start",
-    marginTop: 6,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  pdfDownloadMiniText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#DC2626",
+  },
+  studentProfileBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  studentProfileBarText: {
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 16,
+  },
+  typeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  approvedTrackBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginTop: 10,
+  },
+  downloadTrackPdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#16A34A",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  downloadTrackPdfBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  viewTrackCertBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  viewTrackCertBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#16A34A",
+  },
+  rejectedTrackBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginTop: 8,
+  },
+  emptyCard: {
+    padding: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 10,
+  },
+  emptyActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  emptyActionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   statusPillText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
-    color: "#D97706",
   },
   cancelRequestBtn: {
     padding: 8,
     borderRadius: 6,
     backgroundColor: "#FEE2E2",
+    alignSelf: "flex-start",
+    marginLeft: 8,
   },
   modalOverlay: {
     flex: 1,

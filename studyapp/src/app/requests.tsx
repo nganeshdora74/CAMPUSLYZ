@@ -206,6 +206,12 @@ export default function UnifiedRequestsScreen() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [filterStatus, setFilterStatus] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [trackViewMode, setTrackViewMode] = useState<"grouped" | "list">("grouped");
+  const [collapsedStudentSections, setCollapsedStudentSections] = useState<Record<string, boolean>>({});
+
+  const toggleStudentSectionCollapse = (key: string) => {
+    setCollapsedStudentSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Audit trail modal
   const [selectedAuditRequest, setSelectedAuditRequest] = useState<StudentRequest | null>(null);
@@ -323,6 +329,63 @@ export default function UnifiedRequestsScreen() {
       return matchStatus && matchSearch;
     });
   }, [requests, filterStatus, searchQuery]);
+
+  // Dynamic status counts for student
+  const myPendingCount = requests.filter((r) => r.status === "Pending" || !r.status).length;
+  const myInProgressCount = requests.filter((r) => r.status === "In Progress").length;
+  const myResolvedCount = requests.filter((r) => r.status === "Resolved" || r.status === "Confirmed").length;
+  const myRejectedCount = requests.filter((r) => r.status === "Rejected").length;
+
+  const getStudentStatusCount = (st: string) => {
+    if (st === "All") return requests.length;
+    if (st === "Pending") return myPendingCount;
+    if (st === "Resolved") return requests.filter((r) => r.status === "Resolved").length;
+    if (st === "Confirmed") return requests.filter((r) => r.status === "Confirmed").length;
+    return requests.filter((r) => r.status === st).length;
+  };
+
+  const STUDENT_STATUS_GROUPS = useMemo(() => [
+    {
+      key: "Pending",
+      title: "Pending Review",
+      description: "Submitted to administration, awaiting review or assignment",
+      icon: "time" as const,
+      color: "#F59E0B",
+      bgLight: "#FFFBEB",
+      badgeBg: "#FEF3C7",
+      badgeText: "#B45309",
+    },
+    {
+      key: "In Progress",
+      title: "In Progress",
+      description: "Staff assigned and actively working on resolution",
+      icon: "sync" as const,
+      color: "#2563EB",
+      bgLight: "#EFF6FF",
+      badgeBg: "#DBEAFE",
+      badgeText: "#1D4ED8",
+    },
+    {
+      key: "Resolved",
+      title: "Resolved / Confirmed",
+      description: "Resolved by department; please confirm satisfaction",
+      icon: "checkmark-done-circle" as const,
+      color: "#059669",
+      bgLight: "#ECFDF5",
+      badgeBg: "#D1FAE5",
+      badgeText: "#047857",
+    },
+    {
+      key: "Rejected",
+      title: "Declined / Closed",
+      description: "Requests that could not be processed",
+      icon: "close-circle" as const,
+      color: "#DC2626",
+      bgLight: "#FEF2F2",
+      badgeBg: "#FEE2E2",
+      badgeText: "#B91C1C",
+    },
+  ], []);
 
   // Gallery Picker with Low-network compression simulator
   const handlePickPhoto = async () => {
@@ -533,6 +596,244 @@ export default function UnifiedRequestsScreen() {
       default:
         return "#3B82F6";
     }
+  };
+
+  const renderStudentTicketCard = (item: StudentRequest) => {
+    const statusColor = getStatusColor(item.status);
+    const isResolved = item.status === "Resolved";
+    const isConfirmed = item.status === "Confirmed";
+
+    return (
+      <View
+        key={item.id}
+        style={[
+          styles.ticketCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: isConfirmed
+              ? "#10B981"
+              : isResolved
+              ? "#F59E0B"
+              : colors.border,
+            borderWidth: isResolved || isConfirmed ? 1.5 : 1,
+            borderLeftColor: statusColor,
+            borderLeftWidth: 4,
+          },
+        ]}
+      >
+        {/* Header */}
+        <View style={styles.ticketCardHeader}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.idCategoryRow}>
+              <Text style={styles.complaintIdText}>
+                {item.complaintId}
+              </Text>
+              <View
+                style={[
+                  styles.catTag,
+                  {
+                    backgroundColor: isDark ? "#334155" : "#F1F5F9",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.catTagText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {item.category}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.priorityBadge,
+                  {
+                    backgroundColor: `${getPriorityBadgeColor(
+                      item.priority
+                    )}18`,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.priorityBadgeText,
+                    { color: getPriorityBadgeColor(item.priority) },
+                  ]}
+                >
+                  {item.priority}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.ticketTitle, { color: colors.text }]}>
+              {item.title}
+            </Text>
+          </View>
+
+          {/* Status */}
+          <View
+            style={[
+              styles.statusBadge,
+              {
+                backgroundColor: `${statusColor}18`,
+                borderColor: statusColor,
+              },
+            ]}
+          >
+            <View
+              style={[styles.statusDot, { backgroundColor: statusColor }]}
+            />
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {item.status}
+            </Text>
+          </View>
+        </View>
+
+        {/* Location & Details (Priority 1 fields) */}
+        {item.location ? (
+          <View style={styles.locationRow}>
+            <Ionicons
+              name="location-outline"
+              size={15}
+              color="#EF4444"
+            />
+            <Text
+              style={[styles.locationText, { color: colors.text }]}
+            >
+              {item.location}
+            </Text>
+          </View>
+        ) : null}
+
+        <Text
+          style={[styles.descText, { color: colors.textSecondary }]}
+          numberOfLines={3}
+        >
+          {item.description}
+        </Text>
+
+        {/* Metadata Grid (Staff, Created, Resolved) */}
+        <View
+          style={[
+            styles.metaGrid,
+            {
+              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.metaCol}>
+            <Text style={styles.metaLabel}>Assigned Staff</Text>
+            <Text
+              style={[styles.metaVal, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              👤 {item.assignedStaff || "Maintenance Team"}
+            </Text>
+          </View>
+
+          <View style={styles.metaCol}>
+            <Text style={styles.metaLabel}>Created Date</Text>
+            <Text style={[styles.metaVal, { color: colors.text }]}>
+              📅 {item.createdDate || "Today"}
+            </Text>
+          </View>
+
+          {item.resolvedDate && (
+            <View style={styles.metaCol}>
+              <Text style={styles.metaLabel}>Resolved Date</Text>
+              <Text
+                style={[
+                  styles.metaVal,
+                  { color: "#059669", fontWeight: "800" },
+                ]}
+              >
+                ✓ {item.resolvedDate}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Admin Comment / Response if available */}
+        {!!item.adminComment && (
+          <View style={{ marginTop: 10, padding: 10, backgroundColor: isDark ? "#1E293B" : "#ECFDF5", borderRadius: 8, borderWidth: 1, borderColor: isDark ? "#334155" : "#A7F3D0" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Ionicons name="chatbubble-ellipses" size={13} color="#059669" />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#059669" }}>Admin Response:</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: isDark ? "#E2E8F0" : "#065F46", marginTop: 2 }}>{item.adminComment}</Text>
+          </View>
+        )}
+
+        {/* Student Confirms Action (Priority 1 Requirement) */}
+        {isResolved && (
+          <View style={styles.confirmBox}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.confirmTitle}>
+                Maintenance Marked Resolved!
+              </Text>
+              <Text style={styles.confirmSub}>
+                Has the repair work in {item.location || "your location"} been completed to your satisfaction?
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.confirmBtn}
+              onPress={() => handleStudentConfirmResolution(item)}
+            >
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color="#FFFFFF"
+              />
+              <Text style={styles.confirmBtnText}>
+                {t("confirmResolution", "Confirm Resolution")}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isConfirmed && (
+          <View style={styles.verifiedBanner}>
+            <Ionicons
+              name="shield-checkmark"
+              size={16}
+              color="#059669"
+            />
+            <Text style={styles.verifiedBannerText}>
+              {t(
+                "studentConfirmed",
+                "Student Confirmed & Verified Resolution"
+              )}
+            </Text>
+          </View>
+        )}
+
+        {/* View Audit Trail button (Priority 6) */}
+        <TouchableOpacity
+          style={[
+            styles.auditTrailBtn,
+            { borderColor: colors.border },
+          ]}
+          onPress={() => setSelectedAuditRequest(item)}
+        >
+          <Ionicons
+            name="git-commit-outline"
+            size={16}
+            color={colors.primary}
+          />
+          <Text
+            style={[
+              styles.auditTrailBtnText,
+              { color: colors.primary },
+            ]}
+          >
+            {t("auditTrail", "View Full Audit Trail")} (
+            {item.auditTrail?.length || 1} steps)
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   return (
@@ -1075,7 +1376,77 @@ export default function UnifiedRequestsScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Search and status filter */}
+            {/* Status Summary KPI Cards */}
+            <View style={styles.studentStatsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.studentStatCard,
+                  { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: "#6366F1" },
+                  filterStatus === "All" && styles.studentStatCardActive,
+                ]}
+                onPress={() => setFilterStatus("All")}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.studentStatVal, { color: colors.text }]}>{requests.length}</Text>
+                <Text style={[styles.studentStatLabel, { color: colors.textSecondary }]}>Total</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.studentStatCard,
+                  { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: "#F59E0B" },
+                  filterStatus === "Pending" && styles.studentStatCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Pending" ? "All" : "Pending")}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.studentStatVal, { color: "#F59E0B" }]}>{myPendingCount}</Text>
+                <Text style={[styles.studentStatLabel, { color: colors.textSecondary }]}>Pending</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.studentStatCard,
+                  { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: "#2563EB" },
+                  filterStatus === "In Progress" && styles.studentStatCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "In Progress" ? "All" : "In Progress")}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.studentStatVal, { color: "#2563EB" }]}>{myInProgressCount}</Text>
+                <Text style={[styles.studentStatLabel, { color: colors.textSecondary }]}>In Progress</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.studentStatCard,
+                  { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: "#059669" },
+                  filterStatus === "Resolved" && styles.studentStatCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Resolved" ? "All" : "Resolved")}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.studentStatVal, { color: "#059669" }]}>{myResolvedCount}</Text>
+                <Text style={[styles.studentStatLabel, { color: colors.textSecondary }]}>Resolved</Text>
+              </TouchableOpacity>
+
+              {myRejectedCount > 0 && (
+                <TouchableOpacity
+                  style={[
+                    styles.studentStatCard,
+                    { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: "#DC2626" },
+                    filterStatus === "Rejected" && styles.studentStatCardActive,
+                  ]}
+                  onPress={() => setFilterStatus(filterStatus === "Rejected" ? "All" : "Rejected")}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.studentStatVal, { color: "#DC2626" }]}>{myRejectedCount}</Text>
+                  <Text style={[styles.studentStatLabel, { color: colors.textSecondary }]}>Declined</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Search and status filter row */}
             <View style={styles.searchFilterRow}>
               <View
                 style={[
@@ -1105,33 +1476,89 @@ export default function UnifiedRequestsScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.filterPillsRow}
               >
-                {["All", "Pending", "In Progress", "Resolved", "Confirmed"].map(
-                  (st) => (
-                    <TouchableOpacity
-                      key={st}
-                      style={[
-                        styles.filterPill,
-                        filterStatus === st && [
-                          styles.filterPillActive,
-                          { backgroundColor: colors.primary },
-                        ],
-                      ]}
-                      onPress={() => setFilterStatus(st)}
-                    >
-                      <Text
+                {["All", "Pending", "In Progress", "Resolved", "Confirmed", "Rejected"].map(
+                  (st) => {
+                    const count = getStudentStatusCount(st);
+                    if (st === "Rejected" && count === 0) return null;
+                    return (
+                      <TouchableOpacity
+                        key={st}
                         style={[
-                          styles.filterPillText,
-                          {
-                            color: filterStatus === st ? "#FFFFFF" : colors.text,
-                          },
+                          styles.filterPill,
+                          filterStatus === st && [
+                            styles.filterPillActive,
+                            { backgroundColor: colors.primary },
+                          ],
                         ]}
+                        onPress={() => setFilterStatus(st)}
                       >
-                        {st}
-                      </Text>
-                    </TouchableOpacity>
-                  )
+                        <Text
+                          style={[
+                            styles.filterPillText,
+                            {
+                              color: filterStatus === st ? "#FFFFFF" : colors.text,
+                            },
+                          ]}
+                        >
+                          {st} ({count})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
                 )}
               </ScrollView>
+            </View>
+
+            {/* View Mode Toggle: Grouped by Status vs All Tickets */}
+            <View style={styles.studentViewModeBar}>
+              <Text style={[styles.studentViewModeTitle, { color: colors.textSecondary }]}>View By:</Text>
+              <View style={[styles.studentToggleBox, { backgroundColor: isDark ? "#334155" : "#E2E8F0" }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.studentToggleBtn,
+                    trackViewMode === "grouped" && [styles.studentToggleBtnActive, { backgroundColor: colors.card }],
+                  ]}
+                  onPress={() => setTrackViewMode("grouped")}
+                >
+                  <Ionicons
+                    name="layers-outline"
+                    size={14}
+                    color={trackViewMode === "grouped" ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.studentToggleText,
+                      trackViewMode === "grouped" && { color: colors.primary, fontWeight: "700" },
+                      trackViewMode !== "grouped" && { color: colors.textSecondary },
+                    ]}
+                  >
+                    Grouped by Status
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.studentToggleBtn,
+                    trackViewMode === "list" && [styles.studentToggleBtnActive, { backgroundColor: colors.card }],
+                  ]}
+                  onPress={() => setTrackViewMode("list")}
+                >
+                  <Ionicons
+                    name="list-outline"
+                    size={14}
+                    color={trackViewMode === "list" ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.studentToggleText,
+                      trackViewMode === "list" && { color: colors.primary, fontWeight: "700" },
+                      trackViewMode !== "list" && { color: colors.textSecondary },
+                    ]}
+                  >
+                    All Tickets
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {loadingHistory ? (
@@ -1153,240 +1580,123 @@ export default function UnifiedRequestsScreen() {
                 <Text
                   style={[styles.emptySubtitle, { color: colors.textSecondary }]}
                 >
-                  You haven't submitted any complaints or requests matching your filter.
+                  {filterStatus === "All"
+                    ? "You haven't submitted any complaints or requests matching your filter."
+                    : `No tickets found under status "${filterStatus}".`}
                 </Text>
-                <TouchableOpacity
-                  style={[styles.applyNowBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => setActiveTab("complaintForm")}
-                >
-                  <Text style={styles.applyNowBtnText}>Submit Complaint</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              filteredRequests.map((item) => {
-                const statusColor = getStatusColor(item.status);
-                const isResolved = item.status === "Resolved";
-                const isConfirmed = item.status === "Confirmed";
-
-                return (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.ticketCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: isConfirmed
-                          ? "#10B981"
-                          : isResolved
-                          ? "#F59E0B"
-                          : colors.border,
-                        borderWidth: isResolved || isConfirmed ? 1.5 : 1,
-                      },
-                    ]}
+                {filterStatus !== "All" ? (
+                  <TouchableOpacity
+                    style={[styles.applyNowBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => setFilterStatus("All")}
                   >
-                    {/* Header */}
-                    <View style={styles.ticketCardHeader}>
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.idCategoryRow}>
-                          <Text style={styles.complaintIdText}>
-                            {item.complaintId}
-                          </Text>
-                          <View
-                            style={[
-                              styles.catTag,
-                              {
-                                backgroundColor: isDark ? "#334155" : "#F1F5F9",
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.catTagText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {item.category}
-                            </Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.priorityBadge,
-                              {
-                                backgroundColor: `${getPriorityBadgeColor(
-                                  item.priority
-                                )}18`,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.priorityBadgeText,
-                                { color: getPriorityBadgeColor(item.priority) },
-                              ]}
-                            >
-                              {item.priority}
-                            </Text>
-                          </View>
-                        </View>
+                    <Text style={styles.applyNowBtnText}>Show All Tickets</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.applyNowBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => setActiveTab("complaintForm")}
+                  >
+                    <Text style={styles.applyNowBtnText}>Submit Complaint</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : trackViewMode === "grouped" && filterStatus === "All" ? (
+              <View style={{ gap: 16 }}>
+                {STUDENT_STATUS_GROUPS.map((group) => {
+                  const groupItems = filteredRequests.filter((r) => {
+                    if (group.key === "Pending") return r.status === "Pending" || !r.status;
+                    if (group.key === "Resolved") return r.status === "Resolved" || r.status === "Confirmed";
+                    return r.status === group.key;
+                  });
+                  const isCollapsed = Boolean(collapsedStudentSections[group.key]);
 
-                        <Text style={[styles.ticketTitle, { color: colors.text }]}>
-                          {item.title}
-                        </Text>
-                      </View>
-
-                      {/* Status */}
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor: `${statusColor}18`,
-                            borderColor: statusColor,
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[styles.statusDot, { backgroundColor: statusColor }]}
-                        />
-                        <Text style={[styles.statusText, { color: statusColor }]}>
-                          {item.status}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Location & Details (Priority 1 fields) */}
-                    {item.location ? (
-                      <View style={styles.locationRow}>
-                        <Ionicons
-                          name="location-outline"
-                          size={15}
-                          color="#EF4444"
-                        />
-                        <Text
-                          style={[styles.locationText, { color: colors.text }]}
-                        >
-                          {item.location}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    <Text
-                      style={[styles.descText, { color: colors.textSecondary }]}
-                      numberOfLines={3}
-                    >
-                      {item.description}
-                    </Text>
-
-                    {/* Metadata Grid (Staff, Created, Resolved) */}
+                  return (
                     <View
+                      key={group.key}
                       style={[
-                        styles.metaGrid,
+                        styles.studentStatusGroupCard,
                         {
-                          backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+                          backgroundColor: colors.card,
                           borderColor: colors.border,
+                          borderLeftColor: group.color,
                         },
                       ]}
                     >
-                      <View style={styles.metaCol}>
-                        <Text style={styles.metaLabel}>Assigned Staff</Text>
-                        <Text
-                          style={[styles.metaVal, { color: colors.text }]}
-                          numberOfLines={1}
-                        >
-                          👤 {item.assignedStaff || "Maintenance Team"}
-                        </Text>
-                      </View>
-
-                      <View style={styles.metaCol}>
-                        <Text style={styles.metaLabel}>Created Date</Text>
-                        <Text style={[styles.metaVal, { color: colors.text }]}>
-                          📅 {item.createdDate || "Today"}
-                        </Text>
-                      </View>
-
-                      {item.resolvedDate && (
-                        <View style={styles.metaCol}>
-                          <Text style={styles.metaLabel}>Resolved Date</Text>
-                          <Text
+                      <TouchableOpacity
+                        style={styles.studentStatusGroupHeader}
+                        onPress={() => toggleStudentSectionCollapse(group.key)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                          <View
                             style={[
-                              styles.metaVal,
-                              { color: "#059669", fontWeight: "800" },
+                              styles.studentStatusGroupIcon,
+                              { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : group.bgLight },
                             ]}
                           >
-                            ✓ {item.resolvedDate}
-                          </Text>
+                            <Ionicons name={group.icon} size={18} color={group.color} />
+                          </View>
+                          <View>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={[styles.studentStatusGroupTitle, { color: colors.text }]}>
+                                {group.title}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.studentStatusCountPill,
+                                  { backgroundColor: isDark ? "rgba(255,255,255,0.1)" : group.badgeBg },
+                                ]}
+                              >
+                                <Text style={[styles.studentStatusCountText, { color: group.color }]}>
+                                  {groupItems.length}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.studentStatusGroupDesc, { color: colors.textSecondary }]}>
+                              {group.description}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Ionicons
+                          name={isCollapsed ? "chevron-down" : "chevron-up"}
+                          size={18}
+                          color={colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+
+                      {!isCollapsed && (
+                        <View style={{ paddingTop: 10, gap: 12 }}>
+                          {groupItems.length === 0 ? (
+                            <View style={styles.studentGroupEmptyBox}>
+                              <Text style={[styles.studentGroupEmptyText, { color: colors.textSecondary }]}>
+                                No requests in {group.title}
+                              </Text>
+                            </View>
+                          ) : (
+                            groupItems.map((item) => renderStudentTicketCard(item))
+                          )}
                         </View>
                       )}
                     </View>
-
-                    {/* Student Confirms Action (Priority 1 Requirement) */}
-                    {isResolved && (
-                      <View style={styles.confirmBox}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.confirmTitle}>
-                            Maintenance Marked Resolved!
-                          </Text>
-                          <Text style={styles.confirmSub}>
-                            Has the repair work in {item.location || "your location"} been completed to your satisfaction?
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.confirmBtn}
-                          onPress={() => handleStudentConfirmResolution(item)}
-                        >
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.confirmBtnText}>
-                            {t("confirmResolution", "Confirm Resolution")}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {isConfirmed && (
-                      <View style={styles.verifiedBanner}>
-                        <Ionicons
-                          name="shield-checkmark"
-                          size={16}
-                          color="#059669"
-                        />
-                        <Text style={styles.verifiedBannerText}>
-                          {t(
-                            "studentConfirmed",
-                            "Student Confirmed & Verified Resolution"
-                          )}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* View Audit Trail button (Priority 6) */}
-                    <TouchableOpacity
-                      style={[
-                        styles.auditTrailBtn,
-                        { borderColor: colors.border },
-                      ]}
-                      onPress={() => setSelectedAuditRequest(item)}
-                    >
-                      <Ionicons
-                        name="git-commit-outline"
-                        size={16}
-                        color={colors.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.auditTrailBtnText,
-                          { color: colors.primary },
-                        ]}
-                      >
-                        {t("auditTrail", "View Full Audit Trail")} (
-                        {item.auditTrail?.length || 1} steps)
-                      </Text>
+                  );
+                })}
+              </View>
+            ) : (
+              <View>
+                {filterStatus !== "All" && (
+                  <View style={[styles.filterNoticeBox, { backgroundColor: isDark ? "#1E293B" : "#EEF2FF", borderColor: "#C7D2FE" }]}>
+                    <Ionicons name="funnel" size={15} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: colors.primary }}>
+                      Showing {filteredRequests.length} tickets with status "{filterStatus}"
+                    </Text>
+                    <TouchableOpacity onPress={() => setFilterStatus("All")} style={{ marginLeft: "auto" }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: "#EF4444" }}>Clear ✕</Text>
                     </TouchableOpacity>
                   </View>
-                );
-              })
+                )}
+                {filteredRequests.map((item) => renderStudentTicketCard(item))}
+              </View>
             )}
           </ScrollView>
         )}
@@ -2222,5 +2532,125 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "800",
+  },
+  // Student Status Cards & Groups
+  studentStatsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  studentStatCard: {
+    flex: 1,
+    minWidth: 70,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  studentStatCardActive: {
+    backgroundColor: "rgba(79, 70, 229, 0.08)",
+  },
+  studentStatVal: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  studentStatLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  studentViewModeBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    marginTop: 6,
+  },
+  studentViewModeTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  studentToggleBox: {
+    flexDirection: "row",
+    padding: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  studentToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  studentToggleBtnActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  studentToggleText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  studentStatusGroupCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    padding: 12,
+  },
+  studentStatusGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  studentStatusGroupIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  studentStatusGroupTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  studentStatusCountPill: {
+    paddingVertical: 1,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  studentStatusCountText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  studentStatusGroupDesc: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  studentGroupEmptyBox: {
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  studentGroupEmptyText: {
+    fontSize: 12,
+    fontStyle: "italic",
+  },
+  filterNoticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
   },
 });

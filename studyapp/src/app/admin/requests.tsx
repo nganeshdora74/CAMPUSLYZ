@@ -145,6 +145,12 @@ export default function AdminRequestsScreen() {
 
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [viewMode, setViewMode] = useState<"grouped" | "list">("grouped");
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  const toggleSectionCollapse = (key: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -213,10 +219,81 @@ export default function AdminRequestsScreen() {
     });
   }, [requests, search, filterStatus]);
 
-  // Dynamic counts
-  const pendingCount = requests.filter((r) => r.status === "Pending").length;
+  // Dynamic status counts
+  const pendingCount = requests.filter((r) => r.status === "Pending" || !r.status).length;
   const inProgressCount = requests.filter((r) => r.status === "In Progress").length;
+  const approvedCount = requests.filter((r) => r.status === "Approved").length;
   const resolvedCount = requests.filter((r) => r.status === "Resolved").length;
+  const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
+
+  const getStatusCount = (st: string) => {
+    if (st === "All") return requests.length;
+    if (st === "Pending") return pendingCount;
+    return requests.filter((r) => r.status === st).length;
+  };
+
+  const STATUS_GROUPS = useMemo(() => [
+    {
+      key: "Pending",
+      title: "Pending Review",
+      description: "Awaiting administrative review or staff assignment",
+      icon: "time" as const,
+      color: "#F59E0B",
+      bgLight: "#FFFBEB",
+      bgDark: "#431407",
+      borderColor: "#FDE68A",
+      badgeBg: "#FEF3C7",
+      badgeText: "#B45309",
+    },
+    {
+      key: "In Progress",
+      title: "In Progress / Assigned",
+      description: "Under active investigation or ongoing maintenance",
+      icon: "sync" as const,
+      color: "#3B82F6",
+      bgLight: "#EFF6FF",
+      bgDark: "#1E3A8A",
+      borderColor: "#BFDBFE",
+      badgeBg: "#DBEAFE",
+      badgeText: "#1D4ED8",
+    },
+    {
+      key: "Approved",
+      title: "Approved Requests",
+      description: "Leave passes, certificates & applications cleared by admin",
+      icon: "checkmark-circle" as const,
+      color: "#8B5CF6",
+      bgLight: "#F5F3FF",
+      bgDark: "#2E1065",
+      borderColor: "#DDD6FE",
+      badgeBg: "#EDE9FE",
+      badgeText: "#6D28D9",
+    },
+    {
+      key: "Resolved",
+      title: "Resolved & Closed",
+      description: "Grievances completed & verified by staff/student",
+      icon: "checkmark-done-circle" as const,
+      color: "#10B981",
+      bgLight: "#ECFDF5",
+      bgDark: "#064E3B",
+      borderColor: "#A7F3D0",
+      badgeBg: "#D1FAE5",
+      badgeText: "#047857",
+    },
+    {
+      key: "Rejected",
+      title: "Rejected / Declined",
+      description: "Disapproved requests or invalid submissions",
+      icon: "close-circle" as const,
+      color: "#EF4444",
+      bgLight: "#FEF2F2",
+      bgDark: "#450A0A",
+      borderColor: "#FECACA",
+      badgeBg: "#FEE2E2",
+      badgeText: "#B91C1C",
+    },
+  ], []);
 
   const openResponseModal = (item: RequestItem) => {
     setEditingRequest(item);
@@ -600,20 +677,21 @@ export default function AdminRequestsScreen() {
     confirmLogout("Are you sure you want to sign out?");
   };
 
-  // Helper styles for badges
+  // Helper styles for badges & accents
   const getStatusStyle = (st?: string) => {
     switch (st) {
       case "Approved":
+        return { bg: "#EDE9FE", text: "#6D28D9", border: "#DDD6FE", stripe: "#8B5CF6" };
       case "Resolved":
-        return { bg: "#ECFDF5", text: "#059669", border: "#A7F3D0" };
+        return { bg: "#ECFDF5", text: "#059669", border: "#A7F3D0", stripe: "#10B981" };
       case "Pending":
-        return { bg: "#FEF3C7", text: "#D97706", border: "#FDE68A" };
+        return { bg: "#FEF3C7", text: "#D97706", border: "#FDE68A", stripe: "#F59E0B" };
       case "In Progress":
-        return { bg: "#EFF6FF", text: "#2563EB", border: "#BFDBFE" };
+        return { bg: "#EFF6FF", text: "#2563EB", border: "#BFDBFE", stripe: "#3B82F6" };
       case "Rejected":
-        return { bg: "#FEE2E2", text: "#DC2626", border: "#FECACA" };
+        return { bg: "#FEE2E2", text: "#DC2626", border: "#FECACA", stripe: "#EF4444" };
       default:
-        return { bg: "#F1F5F9", text: "#475569", border: "#E2E8F0" };
+        return { bg: "#FEF3C7", text: "#D97706", border: "#FDE68A", stripe: "#F59E0B" };
     }
   };
 
@@ -630,6 +708,250 @@ export default function AdminRequestsScreen() {
       default:
         return { bg: "#F1F5F9", text: "#64748B" };
     }
+  };
+
+  const renderTicketCard = (item: RequestItem) => {
+    const stStyle = getStatusStyle(item.status);
+    const prStyle = getPriorityStyle(item.priority);
+
+    return (
+      <View
+        key={item.id}
+        style={[
+          styles.ticketCard,
+          {
+            backgroundColor: colors.adminCard,
+            borderColor: colors.adminCardBorder,
+            borderLeftColor: stStyle.stripe,
+            borderLeftWidth: 4,
+          },
+        ]}
+      >
+        <View style={styles.ticketTopRow}>
+          <View style={styles.badgeGroup}>
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: stStyle.bg, borderColor: stStyle.border },
+              ]}
+            >
+              <Text style={[styles.statusBadgeText, { color: stStyle.text }]}>
+                {item.status || "Pending"}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.priorityBadge,
+                { backgroundColor: prStyle.bg },
+              ]}
+            >
+              <Text style={[styles.priorityBadgeText, { color: prStyle.text }]}>
+                {item.priority || "Normal"}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.categoryBadge,
+                { backgroundColor: isDark ? "#1E293B" : "#F1F5F9" },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryBadgeText,
+                  { color: isDark ? "#94A3B8" : "#475569" },
+                ]}
+              >
+                {item.category || "General"}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.actionBtnsRow}>
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: isDark ? "#312E81" : "#EEF2FF" }]}
+              onPress={() => openResponseModal(item)}
+            >
+              <Ionicons name="chatbubbles-outline" size={17} color="#4F46E5" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.iconBtn, styles.deleteBtn]}
+              onPress={() => handleDelete(item)}
+            >
+              <Ionicons name="trash-outline" size={17} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={[styles.ticketTitle, { color: colors.adminText }]}>{item.title}</Text>
+        <Text style={[styles.ticketDesc, { color: colors.adminTextSecondary }]} numberOfLines={3}>
+          {item.description}
+        </Text>
+
+        {/* Requester Details */}
+        <View style={[styles.requesterBox, { backgroundColor: isDark ? "#162032" : "#F8FAFC" }]}>
+          <Ionicons name="person-circle-outline" size={18} color="#6366F1" />
+          <Text style={[styles.requesterName, { color: colors.adminText }]}>
+            {item.requesterName || "Unknown"}
+          </Text>
+          {!!item.rollNo && (
+            <Text style={[styles.requesterMeta, { color: colors.adminTextSecondary }]}>
+              • Roll: {item.rollNo}
+            </Text>
+          )}
+          {!!item.department && (
+            <Text style={[styles.requesterMeta, { color: colors.adminTextSecondary }]}>
+              ({item.department})
+            </Text>
+          )}
+        </View>
+
+        {/* Leave & Gate Pass Schedule Details */}
+        {(!!item.fromDate || !!item.date || !!item.outTime || item.category === "Leave" || item.category === "Gate Pass" || !!item.passType) && (
+          <View
+            style={[
+              styles.leaveGateInfoBox,
+              {
+                backgroundColor: isDark ? "#1E1E2D" : "#EEF2FF",
+                borderColor: isDark ? "#312E81" : "#C7D2FE",
+              },
+            ]}
+          >
+            {item.category === "Leave" || item.passType === "leave" || !!item.fromDate ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="airplane" size={14} color="#4F46E5" />
+                <Text style={[styles.leaveGateInfoText, { color: isDark ? "#C7D2FE" : "#3730A3" }]}>
+                  Leave Duration: <Text style={{ fontWeight: "700" }}>{item.fromDate || "N/A"} → {item.toDate || "N/A"}</Text>
+                </Text>
+              </View>
+            ) : (
+              <View style={{ gap: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="exit-outline" size={14} color="#7C3AED" />
+                  <Text style={[styles.leaveGateInfoText, { color: isDark ? "#DDD6FE" : "#5B21B6" }]}>
+                    Pass Date: <Text style={{ fontWeight: "700" }}>{item.date || "Today"}</Text> | Time: <Text style={{ fontWeight: "700" }}>{item.outTime || "N/A"} → {item.returnTime || "N/A"}</Text>
+                  </Text>
+                </View>
+                {!!item.destination && (
+                  <Text style={[styles.leaveGateInfoSub, { color: isDark ? "#A5B4FC" : "#4338CA" }]}>
+                    📍 Destination: {item.destination}
+                  </Text>
+                )}
+                {!!item.contactNumber && (
+                  <Text style={[styles.leaveGateInfoSub, { color: isDark ? "#A5B4FC" : "#4338CA" }]}>
+                    📞 Contact: {item.contactNumber}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Student Attached Hardcopy Badges */}
+        {(item.photoUrl || item.pdfUrl) && (
+          <View style={styles.studentAttachmentsRow}>
+            <Text style={styles.attachmentSectionLabel}>Student Hardcopy:</Text>
+            {item.photoUrl ? (
+              <TouchableOpacity
+                style={styles.hardcopyChip}
+                onPress={() => setPreviewPhoto(item.photoUrl || null)}
+              >
+                <Ionicons name="image" size={13} color="#7C3AED" />
+                <Text style={styles.hardcopyChipText}>Student Photo</Text>
+              </TouchableOpacity>
+            ) : null}
+            {item.pdfUrl ? (
+              <TouchableOpacity
+                style={[styles.hardcopyChip, { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }]}
+                onPress={() => Linking.openURL(item.pdfUrl!)}
+              >
+                <Ionicons name="document-text" size={13} color="#DC2626" />
+                <Text style={[styles.hardcopyChipText, { color: "#DC2626" }]}>
+                  Student PDF
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
+
+        {/* Admin comment snippet & attached hardcopy */}
+        {!!(item.adminComment || item.adminPhotoUrl || item.adminPdfUrl) && (
+          <View style={styles.commentBox}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Ionicons name="chatbubble-ellipses" size={14} color="#059669" />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#059669" }}>
+                Official Admin Response:
+              </Text>
+            </View>
+            {!!item.adminComment && (
+              <Text style={styles.commentText} numberOfLines={2}>
+                {item.adminComment}
+              </Text>
+            )}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+              {item.adminPhotoUrl ? (
+                <TouchableOpacity
+                  style={styles.adminSlipChip}
+                  onPress={() => setPreviewPhoto(item.adminPhotoUrl || null)}
+                >
+                  <Ionicons name="image" size={11} color="#059669" />
+                  <Text style={styles.adminSlipText}>Official Slip</Text>
+                </TouchableOpacity>
+              ) : null}
+              {item.adminPdfUrl ? (
+                <TouchableOpacity
+                  style={styles.adminSlipChip}
+                  onPress={() => Linking.openURL(item.adminPdfUrl!)}
+                >
+                  <Ionicons name="document-text" size={11} color="#059669" />
+                  <Text style={styles.adminSlipText}>Official PDF</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        )}
+
+        {/* Card Footer with Quick Status & Reply Button */}
+        <View style={styles.cardFooter}>
+          <Text style={styles.quickStatusLabel}>Quick Status Transition:</Text>
+          <View style={styles.quickStatusRow}>
+            {(item.category === "Leave" || item.category === "Gate Pass" || !!item.passType
+              ? ["Pending", "Approved", "Rejected"]
+              : ["Pending", "In Progress", "Approved", "Resolved", "Rejected"]
+            ).map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[
+                  styles.quickStatusBtn,
+                  item.status === s && styles.quickStatusBtnActive,
+                ]}
+                onPress={() => handleQuickStatus(item, s)}
+              >
+                <Text
+                  style={[
+                    styles.quickStatusBtnText,
+                    item.status === s && styles.quickStatusBtnTextActive,
+                  ]}
+                >
+                  {s}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={styles.replyCardBtn}
+            onPress={() => openResponseModal(item)}
+          >
+            <Ionicons name="chatbubbles" size={14} color="#FFFFFF" />
+            <Text style={styles.replyCardBtnText}>
+              {item.adminComment ? "Update Reply" : "Answer & Reply"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   };
 
   return (
@@ -672,85 +994,226 @@ export default function AdminRequestsScreen() {
               </View>
             </View>
 
-            {/* KPI STATS CARDS */}
+            {/* KPI STATS CARDS (INTERACTIVE & STATUS FILTER LINKED) */}
             <View style={styles.statsRow}>
-              <View style={[styles.statCard, { borderLeftColor: "#6366F1", backgroundColor: colors.adminCard }]}>
+              {/* Total */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#6366F1", backgroundColor: colors.adminCard },
+                  filterStatus === "All" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus("All")}
+                activeOpacity={0.8}
+              >
                 <View style={[styles.statIconBox, { backgroundColor: isDark ? "#2E1065" : "#EEF2FF" }]}>
                   <Ionicons name="document-text" size={22} color="#6366F1" />
                 </View>
                 <View style={styles.statCol}>
-                  <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>Total Requests</Text>
+                  <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>All Requests</Text>
                   <Text style={[styles.statValue, { color: colors.adminText }]}>{requests.length}</Text>
+                  <Text style={styles.statFilterHint}>View all</Text>
                 </View>
-              </View>
+                {filterStatus === "All" && <View style={[styles.activePillDot, { backgroundColor: "#6366F1" }]} />}
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { borderLeftColor: "#F59E0B", backgroundColor: colors.adminCard }]}>
+              {/* Pending */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#F59E0B", backgroundColor: colors.adminCard },
+                  filterStatus === "Pending" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Pending" ? "All" : "Pending")}
+                activeOpacity={0.8}
+              >
                 <View style={[styles.statIconBox, { backgroundColor: isDark ? "#431407" : "#FFFBEB" }]}>
                   <Ionicons name="time" size={22} color="#F59E0B" />
                 </View>
                 <View style={styles.statCol}>
                   <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>Pending</Text>
-                  <Text style={[styles.statValue, { color: colors.adminText }]}>{pendingCount}</Text>
+                  <Text style={[styles.statValue, { color: "#F59E0B" }]}>{pendingCount}</Text>
+                  <Text style={styles.statFilterHint}>{filterStatus === "Pending" ? "Filtering ✓" : "Tap to filter"}</Text>
                 </View>
-              </View>
+                {filterStatus === "Pending" && <View style={[styles.activePillDot, { backgroundColor: "#F59E0B" }]} />}
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { borderLeftColor: "#3B82F6", backgroundColor: colors.adminCard }]}>
+              {/* In Progress */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#3B82F6", backgroundColor: colors.adminCard },
+                  filterStatus === "In Progress" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "In Progress" ? "All" : "In Progress")}
+                activeOpacity={0.8}
+              >
                 <View style={[styles.statIconBox, { backgroundColor: isDark ? "#1E3A8A" : "#EFF6FF" }]}>
                   <Ionicons name="sync" size={22} color="#3B82F6" />
                 </View>
                 <View style={styles.statCol}>
                   <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>In Progress</Text>
-                  <Text style={[styles.statValue, { color: colors.adminText }]}>{inProgressCount}</Text>
+                  <Text style={[styles.statValue, { color: "#3B82F6" }]}>{inProgressCount}</Text>
+                  <Text style={styles.statFilterHint}>{filterStatus === "In Progress" ? "Filtering ✓" : "Tap to filter"}</Text>
                 </View>
-              </View>
+                {filterStatus === "In Progress" && <View style={[styles.activePillDot, { backgroundColor: "#3B82F6" }]} />}
+              </TouchableOpacity>
 
-              <View style={[styles.statCard, { borderLeftColor: "#10B981", backgroundColor: colors.adminCard }]}>
+              {/* Approved */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#8B5CF6", backgroundColor: colors.adminCard },
+                  filterStatus === "Approved" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Approved" ? "All" : "Approved")}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.statIconBox, { backgroundColor: isDark ? "#2E1065" : "#F5F3FF" }]}>
+                  <Ionicons name="checkmark-circle" size={22} color="#8B5CF6" />
+                </View>
+                <View style={styles.statCol}>
+                  <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>Approved</Text>
+                  <Text style={[styles.statValue, { color: "#8B5CF6" }]}>{approvedCount}</Text>
+                  <Text style={styles.statFilterHint}>{filterStatus === "Approved" ? "Filtering ✓" : "Tap to filter"}</Text>
+                </View>
+                {filterStatus === "Approved" && <View style={[styles.activePillDot, { backgroundColor: "#8B5CF6" }]} />}
+              </TouchableOpacity>
+
+              {/* Resolved */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#10B981", backgroundColor: colors.adminCard },
+                  filterStatus === "Resolved" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Resolved" ? "All" : "Resolved")}
+                activeOpacity={0.8}
+              >
                 <View style={[styles.statIconBox, { backgroundColor: isDark ? "#064E3B" : "#ECFDF5" }]}>
                   <Ionicons name="checkmark-done" size={22} color="#10B981" />
                 </View>
                 <View style={styles.statCol}>
                   <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>Resolved</Text>
-                  <Text style={[styles.statValue, { color: colors.adminText }]}>{resolvedCount}</Text>
+                  <Text style={[styles.statValue, { color: "#10B981" }]}>{resolvedCount}</Text>
+                  <Text style={styles.statFilterHint}>{filterStatus === "Resolved" ? "Filtering ✓" : "Tap to filter"}</Text>
+                </View>
+                {filterStatus === "Resolved" && <View style={[styles.activePillDot, { backgroundColor: "#10B981" }]} />}
+              </TouchableOpacity>
+
+              {/* Rejected */}
+              <TouchableOpacity
+                style={[
+                  styles.statCard,
+                  { borderLeftColor: "#EF4444", backgroundColor: colors.adminCard },
+                  filterStatus === "Rejected" && styles.statCardActive,
+                ]}
+                onPress={() => setFilterStatus(filterStatus === "Rejected" ? "All" : "Rejected")}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.statIconBox, { backgroundColor: isDark ? "#450A0A" : "#FEF2F2" }]}>
+                  <Ionicons name="close-circle" size={22} color="#EF4444" />
+                </View>
+                <View style={styles.statCol}>
+                  <Text style={[styles.statLabel, { color: colors.adminTextSecondary }]}>Rejected</Text>
+                  <Text style={[styles.statValue, { color: "#EF4444" }]}>{rejectedCount}</Text>
+                  <Text style={styles.statFilterHint}>{filterStatus === "Rejected" ? "Filtering ✓" : "Tap to filter"}</Text>
+                </View>
+                {filterStatus === "Rejected" && <View style={[styles.activePillDot, { backgroundColor: "#EF4444" }]} />}
+              </TouchableOpacity>
+            </View>
+
+            {/* CONTROLS BAR: STATUS FILTER PILLS & VIEW MODE TOGGLE */}
+            <View style={styles.controlsBar}>
+              <View style={styles.filterSection}>
+                <Text style={[styles.filterTitle, { color: colors.adminText }]}>Status Filter:</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.filterScroll}
+                >
+                  {STATUS_FILTERS.map((st) => {
+                    const active = filterStatus === st;
+                    const count = getStatusCount(st);
+                    return (
+                      <TouchableOpacity
+                        key={st}
+                        style={[
+                          styles.filterChip,
+                          active && styles.filterChipActive,
+                          { backgroundColor: active ? "#4F46E5" : isDark ? "#1E293B" : "#E2E8F0" },
+                        ]}
+                        onPress={() => setFilterStatus(st)}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            active && styles.filterChipTextActive,
+                            !active && { color: isDark ? "#94A3B8" : "#475569" },
+                          ]}
+                        >
+                          {st} ({count})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* View Mode Toggle: Grouped by Status vs Unified List */}
+              <View style={styles.viewModeContainer}>
+                <Text style={[styles.viewModeLabel, { color: colors.adminTextSecondary }]}>View Mode:</Text>
+                <View style={[styles.viewModeToggleBox, { backgroundColor: isDark ? "#1E293B" : "#E2E8F0" }]}>
+                  <TouchableOpacity
+                    style={[
+                      styles.viewModeBtn,
+                      viewMode === "grouped" && [styles.viewModeBtnActive, { backgroundColor: colors.adminCard }],
+                    ]}
+                    onPress={() => setViewMode("grouped")}
+                  >
+                    <Ionicons
+                      name="layers-outline"
+                      size={15}
+                      color={viewMode === "grouped" ? "#4F46E5" : isDark ? "#94A3B8" : "#64748B"}
+                    />
+                    <Text
+                      style={[
+                        styles.viewModeBtnText,
+                        viewMode === "grouped" && styles.viewModeBtnTextActive,
+                        viewMode !== "grouped" && { color: isDark ? "#94A3B8" : "#64748B" },
+                      ]}
+                    >
+                      Grouped by Status
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.viewModeBtn,
+                      viewMode === "list" && [styles.viewModeBtnActive, { backgroundColor: colors.adminCard }],
+                    ]}
+                    onPress={() => setViewMode("list")}
+                  >
+                    <Ionicons
+                      name="list-outline"
+                      size={15}
+                      color={viewMode === "list" ? "#4F46E5" : isDark ? "#94A3B8" : "#64748B"}
+                    />
+                    <Text
+                      style={[
+                        styles.viewModeBtnText,
+                        viewMode === "list" && styles.viewModeBtnTextActive,
+                        viewMode !== "list" && { color: isDark ? "#94A3B8" : "#64748B" },
+                      ]}
+                    >
+                      Unified List
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
 
-            {/* STATUS FILTER PILLS */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterTitle, { color: colors.adminText }]}>Status Filter:</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterScroll}
-              >
-                {STATUS_FILTERS.map((st) => {
-                  const active = filterStatus === st;
-                  return (
-                    <TouchableOpacity
-                      key={st}
-                      style={[
-                        styles.filterChip,
-                        active && styles.filterChipActive,
-                        { backgroundColor: active ? "#4F46E5" : isDark ? "#1E293B" : "#E2E8F0" },
-                      ]}
-                      onPress={() => setFilterStatus(st)}
-                    >
-                      <Text
-                        style={[
-                          styles.filterChipText,
-                          active && styles.filterChipTextActive,
-                          !active && { color: isDark ? "#94A3B8" : "#475569" },
-                        ]}
-                      >
-                        {st}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            {/* TICKETS LIST */}
+            {/* TICKETS DISPLAY */}
             {loading ? (
               <View style={styles.loaderBox}>
                 <ActivityIndicator size="large" color="#5D3EBC" />
@@ -761,248 +1224,129 @@ export default function AdminRequestsScreen() {
                 <Ionicons name="folder-open-outline" size={54} color={colors.adminTextSecondary} />
                 <Text style={[styles.emptyTitle, { color: colors.adminText }]}>No Requests Found</Text>
                 <Text style={[styles.emptySubtitle, { color: colors.adminTextSecondary }]}>
-                  No tickets match the selected criteria. Student requests will appear here once submitted.
+                  {filterStatus === "All"
+                    ? "No tickets match your search. Student requests will appear here once submitted."
+                    : `No tickets currently match status "${filterStatus}". Tap another status or clear the filter.`}
                 </Text>
+                {filterStatus !== "All" && (
+                  <TouchableOpacity
+                    style={[styles.clearFilterBtn, { backgroundColor: "#4F46E5" }]}
+                    onPress={() => setFilterStatus("All")}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>View All Requests</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            ) : (
-              <View style={styles.requestsGrid}>
-                {filteredRequests.map((item) => {
-                  const stStyle = getStatusStyle(item.status);
-                  const prStyle = getPriorityStyle(item.priority);
+            ) : viewMode === "grouped" && filterStatus === "All" ? (
+              <View style={styles.statusGroupsContainer}>
+                {STATUS_GROUPS.map((group) => {
+                  const groupTickets = filteredRequests.filter((r) =>
+                    group.key === "Pending" ? (r.status === "Pending" || !r.status) : r.status === group.key
+                  );
+                  const isCollapsed = Boolean(collapsedSections[group.key]);
 
                   return (
                     <View
-                      key={item.id}
+                      key={group.key}
                       style={[
-                        styles.ticketCard,
-                        { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder },
+                        styles.statusGroupCard,
+                        {
+                          backgroundColor: colors.adminCard,
+                          borderColor: colors.adminCardBorder,
+                          borderLeftColor: group.color,
+                        },
                       ]}
                     >
-                      <View style={styles.ticketTopRow}>
-                        <View style={styles.badgeGroup}>
+                      <TouchableOpacity
+                        style={styles.statusGroupHeader}
+                        onPress={() => toggleSectionCollapse(group.key)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.statusGroupHeaderLeft}>
                           <View
                             style={[
-                              styles.statusBadge,
-                              { backgroundColor: stStyle.bg, borderColor: stStyle.border },
+                              styles.statusGroupIconBox,
+                              { backgroundColor: isDark ? group.bgDark : group.bgLight },
                             ]}
                           >
-                            <Text style={[styles.statusBadgeText, { color: stStyle.text }]}>
-                              {item.status || "Pending"}
-                            </Text>
+                            <Ionicons name={group.icon} size={20} color={group.color} />
                           </View>
-
-                          <View
-                            style={[
-                              styles.priorityBadge,
-                              { backgroundColor: prStyle.bg },
-                            ]}
-                          >
-                            <Text style={[styles.priorityBadgeText, { color: prStyle.text }]}>
-                              {item.priority || "Normal"}
-                            </Text>
-                          </View>
-
-                          <View
-                            style={[
-                              styles.categoryBadge,
-                              { backgroundColor: isDark ? "#1E293B" : "#F1F5F9" },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.categoryBadgeText,
-                                { color: isDark ? "#94A3B8" : "#475569" },
-                              ]}
-                            >
-                              {item.category || "General"}
+                          <View>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <Text style={[styles.statusGroupTitle, { color: colors.adminText }]}>
+                                {group.title}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.statusCountBadge,
+                                  { backgroundColor: isDark ? group.bgDark : group.badgeBg },
+                                ]}
+                              >
+                                <Text style={[styles.statusCountText, { color: group.color }]}>
+                                  {groupTickets.length}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.statusGroupDesc, { color: colors.adminTextSecondary }]}>
+                              {group.description}
                             </Text>
                           </View>
                         </View>
 
-                        <View style={styles.actionBtnsRow}>
+                        <View style={styles.statusGroupHeaderRight}>
                           <TouchableOpacity
-                            style={[styles.iconBtn, { backgroundColor: isDark ? "#312E81" : "#EEF2FF" }]}
-                            onPress={() => openResponseModal(item)}
+                            style={[styles.focusStatusBtn, { borderColor: group.color }]}
+                            onPress={() => setFilterStatus(group.key)}
                           >
-                            <Ionicons name="chatbubbles-outline" size={17} color="#4F46E5" />
+                            <Text style={[styles.focusStatusBtnText, { color: group.color }]}>
+                              Focus Status
+                            </Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.iconBtn, styles.deleteBtn]}
-                            onPress={() => handleDelete(item)}
-                          >
-                            <Ionicons name="trash-outline" size={17} color="#EF4444" />
-                          </TouchableOpacity>
+                          <Ionicons
+                            name={isCollapsed ? "chevron-down-circle-outline" : "chevron-up-circle-outline"}
+                            size={22}
+                            color={colors.adminTextSecondary}
+                          />
                         </View>
-                      </View>
+                      </TouchableOpacity>
 
-                      <Text style={[styles.ticketTitle, { color: colors.adminText }]}>{item.title}</Text>
-                      <Text style={[styles.ticketDesc, { color: colors.adminTextSecondary }]} numberOfLines={3}>
-                        {item.description}
-                      </Text>
-
-                      {/* Requester Details */}
-                      <View style={[styles.requesterBox, { backgroundColor: isDark ? "#162032" : "#F8FAFC" }]}>
-                        <Ionicons name="person-circle-outline" size={18} color="#6366F1" />
-                        <Text style={[styles.requesterName, { color: colors.adminText }]}>
-                          {item.requesterName || "Unknown"}
-                        </Text>
-                        {!!item.rollNo && (
-                          <Text style={[styles.requesterMeta, { color: colors.adminTextSecondary }]}>
-                            • Roll: {item.rollNo}
-                          </Text>
-                        )}
-                        {!!item.department && (
-                          <Text style={[styles.requesterMeta, { color: colors.adminTextSecondary }]}>
-                            ({item.department})
-                          </Text>
-                        )}
-                      </View>
-
-                      {/* Leave & Gate Pass Schedule Details */}
-                      {(!!item.fromDate || !!item.date || !!item.outTime || item.category === "Leave" || item.category === "Gate Pass" || !!item.passType) && (
-                        <View
-                          style={[
-                            styles.leaveGateInfoBox,
-                            {
-                              backgroundColor: isDark ? "#1E1E2D" : "#EEF2FF",
-                              borderColor: isDark ? "#312E81" : "#C7D2FE",
-                            },
-                          ]}
-                        >
-                          {item.category === "Leave" || item.passType === "leave" || !!item.fromDate ? (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                              <Ionicons name="airplane" size={14} color="#4F46E5" />
-                              <Text style={[styles.leaveGateInfoText, { color: isDark ? "#C7D2FE" : "#3730A3" }]}>
-                                Leave Duration: <Text style={{ fontWeight: "700" }}>{item.fromDate || "N/A"} → {item.toDate || "N/A"}</Text>
+                      {!isCollapsed && (
+                        <View style={styles.statusGroupBody}>
+                          {groupTickets.length === 0 ? (
+                            <View style={[styles.statusGroupEmpty, { backgroundColor: isDark ? "#162032" : "#F8FAFC" }]}>
+                              <Ionicons name="file-tray-outline" size={32} color={colors.adminTextSecondary} />
+                              <Text style={[styles.statusGroupEmptyText, { color: colors.adminTextSecondary }]}>
+                                No requests currently in "{group.title}"
                               </Text>
                             </View>
                           ) : (
-                            <View style={{ gap: 4 }}>
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                <Ionicons name="exit-outline" size={14} color="#7C3AED" />
-                                <Text style={[styles.leaveGateInfoText, { color: isDark ? "#DDD6FE" : "#5B21B6" }]}>
-                                  Pass Date: <Text style={{ fontWeight: "700" }}>{item.date || "Today"}</Text> | Time: <Text style={{ fontWeight: "700" }}>{item.outTime || "N/A"} → {item.returnTime || "N/A"}</Text>
-                                </Text>
-                              </View>
-                              {!!item.destination && (
-                                <Text style={[styles.leaveGateInfoSub, { color: isDark ? "#A5B4FC" : "#4338CA" }]}>
-                                  📍 Destination: {item.destination}
-                                </Text>
-                              )}
-                              {!!item.contactNumber && (
-                                <Text style={[styles.leaveGateInfoSub, { color: isDark ? "#A5B4FC" : "#4338CA" }]}>
-                                  📞 Contact: {item.contactNumber}
-                                </Text>
-                              )}
+                            <View style={styles.requestsGrid}>
+                              {groupTickets.map((item) => renderTicketCard(item))}
                             </View>
                           )}
                         </View>
                       )}
-
-                      {/* Student Attached Hardcopy Badges */}
-                      {(item.photoUrl || item.pdfUrl) && (
-                        <View style={styles.studentAttachmentsRow}>
-                          <Text style={styles.attachmentSectionLabel}>Student Hardcopy:</Text>
-                          {item.photoUrl ? (
-                            <TouchableOpacity
-                              style={styles.hardcopyChip}
-                              onPress={() => setPreviewPhoto(item.photoUrl || null)}
-                            >
-                              <Ionicons name="image" size={13} color="#7C3AED" />
-                              <Text style={styles.hardcopyChipText}>Student Photo</Text>
-                            </TouchableOpacity>
-                          ) : null}
-                          {item.pdfUrl ? (
-                            <TouchableOpacity
-                              style={[styles.hardcopyChip, { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }]}
-                              onPress={() => Linking.openURL(item.pdfUrl!)}
-                            >
-                              <Ionicons name="document-text" size={13} color="#DC2626" />
-                              <Text style={[styles.hardcopyChipText, { color: "#DC2626" }]}>
-                                Student PDF
-                              </Text>
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
-                      )}
-
-                      {/* Admin comment snippet & attached hardcopy */}
-                      {!!(item.adminComment || item.adminPhotoUrl || item.adminPdfUrl) && (
-                        <View style={styles.commentBox}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                            <Ionicons name="chatbubble-ellipses" size={14} color="#059669" />
-                            <Text style={{ fontSize: 12, fontWeight: "700", color: "#059669" }}>
-                              Official Admin Response:
-                            </Text>
-                          </View>
-                          {!!item.adminComment && (
-                            <Text style={styles.commentText} numberOfLines={2}>
-                              {item.adminComment}
-                            </Text>
-                          )}
-                          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                            {item.adminPhotoUrl ? (
-                              <TouchableOpacity
-                                style={styles.adminSlipChip}
-                                onPress={() => setPreviewPhoto(item.adminPhotoUrl || null)}
-                              >
-                                <Ionicons name="image" size={11} color="#059669" />
-                                <Text style={styles.adminSlipText}>Official Slip</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                            {item.adminPdfUrl ? (
-                              <TouchableOpacity
-                                style={styles.adminSlipChip}
-                                onPress={() => Linking.openURL(item.adminPdfUrl!)}
-                              >
-                                <Ionicons name="document-text" size={11} color="#059669" />
-                                <Text style={styles.adminSlipText}>Official PDF</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Card Footer with Quick Status & Reply Button */}
-                      <View style={styles.cardFooter}>
-                        <View style={styles.quickStatusRow}>
-                          {(item.category === "Leave" || item.category === "Gate Pass" || !!item.passType
-                            ? ["Pending", "Approved", "Rejected"]
-                            : ["Pending", "Approved", "In Progress", "Resolved"]
-                          ).map((s) => (
-                            <TouchableOpacity
-                              key={s}
-                              style={[
-                                styles.quickStatusBtn,
-                                item.status === s && styles.quickStatusBtnActive,
-                              ]}
-                              onPress={() => handleQuickStatus(item, s)}
-                            >
-                              <Text
-                                style={[
-                                  styles.quickStatusBtnText,
-                                  item.status === s && styles.quickStatusBtnTextActive,
-                                ]}
-                              >
-                                {s}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.replyCardBtn}
-                          onPress={() => openResponseModal(item)}
-                        >
-                          <Ionicons name="chatbubbles" size={14} color="#FFFFFF" />
-                          <Text style={styles.replyCardBtnText}>
-                            {item.adminComment ? "Update Reply" : "Answer & Reply"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
                     </View>
                   );
                 })}
+              </View>
+            ) : (
+              // Filtered list or Unified list view
+              <View>
+                {filterStatus !== "All" && (
+                  <View style={[styles.activeFilterNotice, { backgroundColor: isDark ? "#1E293B" : "#EEF2FF", borderColor: "#C7D2FE" }]}>
+                    <Ionicons name="funnel" size={16} color="#4F46E5" />
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: "#4F46E5" }}>
+                      Showing {filteredRequests.length} {filteredRequests.length === 1 ? "ticket" : "tickets"} with status "{filterStatus}"
+                    </Text>
+                    <TouchableOpacity onPress={() => setFilterStatus("All")} style={{ marginLeft: "auto" }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: "#EF4444" }}>Clear Filter ✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <View style={styles.requestsGrid}>
+                  {filteredRequests.map((item) => renderTicketCard(item))}
+                </View>
               </View>
             )}
           </ScrollView>
@@ -1642,26 +1986,50 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    minWidth: 180,
+    minWidth: 155,
     backgroundColor: "#FFFFFF",
     borderRadius: 14,
-    padding: 16,
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
+    position: "relative",
+  },
+  statCardActive: {
+    borderColor: "#4F46E5",
+    backgroundColor: "rgba(79, 70, 229, 0.04)",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  activePillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    position: "absolute",
+    top: 10,
+    right: 10,
+  },
+  statFilterHint: {
+    fontSize: 10,
+    color: "#94A3B8",
+    fontWeight: "600",
+    marginTop: 2,
   },
   statIconBox: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 14,
+    marginRight: 12,
   },
   statCol: {
     flex: 1,
@@ -1672,16 +2040,23 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
     color: "#0F172A",
     marginTop: 2,
   },
-  // FILTER SECTION
+  // CONTROLS BAR (FILTER + VIEW TOGGLE)
+  controlsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 14,
+    marginBottom: 20,
+  },
   filterSection: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
     flexWrap: "wrap",
     gap: 10,
   },
@@ -1695,7 +2070,7 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     borderRadius: 20,
     backgroundColor: "#E2E8F0",
   },
@@ -1709,6 +2084,143 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: "#FFFFFF",
+  },
+  viewModeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  viewModeLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  viewModeToggleBox: {
+    flexDirection: "row",
+    padding: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+  viewModeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  viewModeBtnActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  viewModeBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  viewModeBtnTextActive: {
+    color: "#4F46E5",
+    fontWeight: "700",
+  },
+  clearFilterBtn: {
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+  },
+  activeFilterNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  // STATUS GROUPS LANES
+  statusGroupsContainer: {
+    gap: 20,
+  },
+  statusGroupCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderLeftWidth: 5,
+    overflow: "hidden",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  statusGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+  },
+  statusGroupHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  statusGroupIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusGroupTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  statusCountBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  statusCountText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  statusGroupDesc: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  statusGroupHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  focusStatusBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  focusStatusBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  statusGroupBody: {
+    padding: 16,
+  },
+  statusGroupEmpty: {
+    paddingVertical: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    gap: 6,
+  },
+  statusGroupEmptyText: {
+    fontSize: 13,
+    fontWeight: "500",
   },
   // TICKETS GRID
   requestsGrid: {

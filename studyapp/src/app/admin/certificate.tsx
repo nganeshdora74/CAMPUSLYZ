@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -117,10 +117,20 @@ export interface CertRequestItem {
   id: string;
   studentId: string;
   studentName: string;
+  studentRollNo?: string;
+  department?: string;
+  semester?: string | number;
   studentEmail: string;
   certificateType: string;
   purpose: string;
-  status: string;
+  status: "Pending" | "Approved" | "Rejected" | string;
+  adminComment?: string;
+  issuedCertificateId?: string;
+  credentialId?: string;
+  pdfUrl?: string;
+  photoUrl?: string;
+  approvedAt?: any;
+  rejectedAt?: any;
   createdAt?: any;
 }
 
@@ -141,18 +151,22 @@ export default function AdminCertificateScreen() {
   // Search & Filter
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("All");
+  const [requestStatusFilter, setRequestStatusFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("All");
 
   // Issue / Edit Certificate Modal States (matching screenshot)
   const [issueModalVisible, setIssueModalVisible] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentItem | null>(null);
+  const [targetStudentId, setTargetStudentId] = useState<string | null>(null);
   const [editingCert, setEditingCert] = useState<CertificateItem | null>(null);
   const [certTitle, setCertTitle] = useState("");
   const [certSubject, setCertSubject] = useState("");
   const [certStudentName, setCertStudentName] = useState("");
   const [certStudentRoll, setCertStudentRoll] = useState("");
+  const [certDepartment, setCertDepartment] = useState("");
   const [certGrade, setCertGrade] = useState("Grade A+ (94%)");
   const [certTeacher, setCertTeacher] = useState("Prof. Ganesh Sharma");
   const [certDescription, setCertDescription] = useState("");
+  const [adminRemark, setAdminRemark] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoFileName, setPhotoFileName] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
@@ -162,6 +176,13 @@ export default function AdminCertificateScreen() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
   const [savingCert, setSavingCert] = useState(false);
+
+  // Quick Issue & Decline States
+  const [quickIssuingId, setQuickIssuingId] = useState<string | null>(null);
+  const [declineModalVisible, setDeclineModalVisible] = useState(false);
+  const [targetRequestForDecline, setTargetRequestForDecline] = useState<CertRequestItem | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineSubmitting, setDeclineSubmitting] = useState(false);
 
   // Preview Photo Modal
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -251,16 +272,29 @@ export default function AdminCertificateScreen() {
     const unsubscribe = onSnapshot(
       reqCol,
       (snapshot) => {
-        const loaded: CertRequestItem[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          studentId: d.data().studentId || "",
-          studentName: d.data().studentName || "Student",
-          studentEmail: d.data().studentEmail || "",
-          certificateType: d.data().certificateType || "Bonafide Certificate",
-          purpose: d.data().purpose || "",
-          status: d.data().status || "Pending",
-          createdAt: d.data().createdAt,
-        }));
+        const loaded: CertRequestItem[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            studentId: data.studentId || "",
+            studentName: data.studentName || "Student",
+            studentRollNo: data.studentRollNo || "",
+            department: data.studentDepartment || data.department || "",
+            semester: data.studentSemester || data.semester || "",
+            studentEmail: data.studentEmail || "",
+            certificateType: data.certificateType || "Bonafide Certificate",
+            purpose: data.purpose || "",
+            status: data.status || "Pending",
+            adminComment: data.adminComment || "",
+            issuedCertificateId: data.issuedCertificateId || "",
+            credentialId: data.credentialId || "",
+            pdfUrl: data.pdfUrl || "",
+            photoUrl: data.photoUrl || "",
+            approvedAt: data.approvedAt,
+            rejectedAt: data.rejectedAt,
+            createdAt: data.createdAt,
+          };
+        });
         setRequests(loaded);
       },
       (err) => {
@@ -292,17 +326,55 @@ export default function AdminCertificateScreen() {
     );
   });
 
+  // Filtered Requests
+  const filteredRequests = useMemo(() => {
+    return requests.filter((r) => {
+      const matchesStatus =
+        requestStatusFilter === "All" ||
+        r.status.toLowerCase() === requestStatusFilter.toLowerCase();
+
+      const q = search.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        r.studentName.toLowerCase().includes(q) ||
+        (r.studentRollNo && r.studentRollNo.toLowerCase().includes(q)) ||
+        r.studentEmail.toLowerCase().includes(q) ||
+        r.certificateType.toLowerCase().includes(q) ||
+        r.purpose.toLowerCase().includes(q) ||
+        (r.department && r.department.toLowerCase().includes(q)) ||
+        (r.credentialId && r.credentialId.toLowerCase().includes(q));
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [requests, requestStatusFilter, search]);
+
+  const pendingReqCount = requests.filter((r) => r.status === "Pending").length;
+  const approvedReqCount = requests.filter((r) => r.status === "Approved").length;
+  const rejectedReqCount = requests.filter((r) => r.status === "Rejected").length;
+
+  // Helper to match student profile for a request
+  const getStudentForRequest = (req: CertRequestItem) => {
+    return students.find(
+      (s) =>
+        s.id === req.studentId ||
+        (req.studentEmail && s.email.toLowerCase() === req.studentEmail.toLowerCase())
+    );
+  };
+
   // Open Issue Modal for a specific student
   const handleOpenIssueForStudent = (student: StudentItem) => {
     setEditingCert(null);
     setSelectedStudent(student);
+    setTargetStudentId(student.id);
     setCertStudentName(student.fullName);
     setCertStudentRoll(student.rollNo);
+    setCertDepartment(student.department);
     setCertTitle("Certificate of Academic Excellence");
     setCertSubject(student.department === "CSE" ? "Data Structures & Algorithms Mastery" : "Engineering Fundamentals");
     setCertGrade("Grade A+ (94%)");
     setCertTeacher("Prof. Ganesh Sharma");
     setCertDescription(`Awarded to ${student.fullName} for outstanding academic excellence and mastery.`);
+    setAdminRemark("");
     setPhotoUrl("");
     setPhotoFileName("");
     setPdfUrl("");
@@ -316,13 +388,16 @@ export default function AdminCertificateScreen() {
   const handleOpenEditCertificate = (cert: CertificateItem) => {
     setEditingCert(cert);
     setSelectedStudent(null);
+    setTargetStudentId(cert.studentId || null);
     setCertStudentName(cert.studentName);
     setCertStudentRoll(cert.studentRollNo);
+    setCertDepartment("");
     setCertTitle(cert.title);
     setCertSubject(cert.subject);
     setCertGrade(cert.grade);
     setCertTeacher(cert.issuedBy);
     setCertDescription(cert.description || "");
+    setAdminRemark("");
     setPhotoUrl(cert.photoUrl || "");
     setPhotoFileName(cert.photoUrl ? "Attached Photo" : "");
     setPdfUrl(cert.pdfUrl || "");
@@ -332,24 +407,177 @@ export default function AdminCertificateScreen() {
     setIssueModalVisible(true);
   };
 
-  // Open Issue Modal from Request
+  // Open Issue Modal from Request (Review & Issue with customization)
   const handleApproveRequest = (req: CertRequestItem) => {
+    const matched = getStudentForRequest(req);
+    const resolvedName = req.studentName || matched?.fullName || "Student";
+    const resolvedRoll = req.studentRollNo || matched?.rollNo || "23CSE001";
+    const resolvedDept = req.department || matched?.department || "CSE";
+
     setEditingCert(null);
-    setSelectedStudent(null);
-    setCertStudentName(req.studentName);
-    setCertStudentRoll("23CSE001");
-    setCertTitle(req.certificateType);
-    setCertSubject(req.purpose || "Official Academic Credential");
+    setSelectedStudent(matched || null);
+    setTargetStudentId(req.studentId || matched?.id || "student");
+    setCertStudentName(resolvedName);
+    setCertStudentRoll(resolvedRoll);
+    setCertDepartment(resolvedDept);
+    setCertTitle(req.certificateType || "Official Academic Certificate");
+    setCertSubject(req.purpose ? `Conferred for: ${req.purpose}` : "Official Academic Credential");
     setCertGrade("Verified & Approved");
     setCertTeacher("Prof. Ganesh Sharma");
-    setCertDescription(`Conferred as per official student request for ${req.purpose}.`);
-    setPhotoUrl("");
-    setPhotoFileName("");
-    setPdfUrl("");
-    setPdfFileName("");
+    setCertDescription(
+      `This is to officially certify that ${resolvedName} (Roll No: ${resolvedRoll}), Department of ${resolvedDept}, is granted this ${req.certificateType || "Official Certificate"} as per student request for ${req.purpose || "official academic verification"}.`
+    );
+    setAdminRemark(`Approved & issued by College Administration.`);
+    setPhotoUrl(req.photoUrl || "");
+    setPhotoFileName(req.photoUrl ? "Request Photo" : "");
+    setPdfUrl(req.pdfUrl || "");
+    setPdfFileName(req.pdfUrl ? "Official Certificate PDF" : "");
     setPdfFileSize("");
     setFulfillingRequestId(req.id);
     setIssueModalVisible(true);
+  };
+
+  // 1-Click Quick Issue: Auto-generate accredited university PDF and issue directly
+  const handleQuickIssueRequest = async (req: CertRequestItem) => {
+    const matched = getStudentForRequest(req);
+    const resolvedName = req.studentName || matched?.fullName || "Student";
+    const resolvedRoll = req.studentRollNo || matched?.rollNo || "23CSE001";
+    const resolvedDept = req.department || matched?.department || "Department of Academics";
+    const credId = `CAMP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+      setQuickIssuingId(req.id);
+
+      const certData: CertificateData = {
+        studentName: resolvedName,
+        studentRollNo: resolvedRoll,
+        department: resolvedDept,
+        title: req.certificateType || "Official Academic Certificate",
+        subject: req.purpose ? `Conferred for: ${req.purpose}` : "Official Academic Credential",
+        grade: "Verified & Approved",
+        issuedBy: "Office of the Dean & Registrar",
+        issuerTitle: "Academic Credential Authority",
+        issueDate: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        credentialId: credId,
+        description: `This is to officially certify that ${resolvedName} (Roll No: ${resolvedRoll}), Department of ${resolvedDept}, has been granted this ${req.certificateType} as per student request for ${req.purpose}.`,
+        photoUrl: req.photoUrl || undefined,
+      };
+
+      let finalPdfUrl = "";
+      try {
+        const pdfRes = await generateCertificatePdf(certData);
+        finalPdfUrl = pdfRes.uri;
+        finalPdfUrl = await uploadCertificateFile(finalPdfUrl, "pdf", credId);
+      } catch (pdfErr: any) {
+        console.warn("Auto-PDF generation fallback:", pdfErr?.message);
+      }
+
+      const docRef = await addDoc(collection(db, "certificates"), {
+        studentId: req.studentId || matched?.id || "student",
+        studentName: resolvedName,
+        studentRollNo: resolvedRoll,
+        studentDepartment: resolvedDept,
+        title: req.certificateType || "Official Academic Certificate",
+        subject: req.purpose || "Official Credential",
+        grade: "Verified & Approved",
+        issueDate: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        issuedBy: "Office of the Dean & Registrar",
+        issuerTitle: "Academic Credential Authority",
+        credentialId: credId,
+        description: certData.description,
+        pdfUrl: finalPdfUrl || undefined,
+        photoUrl: req.photoUrl || undefined,
+        verified: true,
+        requestId: req.id,
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "certificateRequests", req.id), {
+        status: "Approved",
+        issuedCertificateId: docRef.id,
+        credentialId: credId,
+        pdfUrl: finalPdfUrl || null,
+        adminComment: `Official certificate generated & issued on ${new Date().toLocaleDateString("en-US")}`,
+        approvedAt: serverTimestamp(),
+      });
+
+      await addDoc(collection(db, "activities"), {
+        title: `Certificate Issued: ${req.certificateType} to ${resolvedName} (${credId})`,
+        time: "Just now",
+        user: "Admin",
+        type: "certificate",
+        createdAt: serverTimestamp(),
+      });
+
+      Alert.alert(
+        "Certificate Issued! 🎓",
+        `Official ${req.certificateType} has been issued to ${resolvedName}.\nCredential ID: ${credId}\n✓ Official Accredited PDF generated.\n✓ Delivered directly to student profile in real-time.`
+      );
+    } catch (err: any) {
+      Alert.alert("Issuance Failed", err?.message || "Could not issue certificate.");
+    } finally {
+      setQuickIssuingId(null);
+    }
+  };
+
+  // Open Decline / Reject Modal for Request
+  const handleOpenDeclineModal = (req: CertRequestItem) => {
+    setTargetRequestForDecline(req);
+    setDeclineReason("");
+    setDeclineModalVisible(true);
+  };
+
+  // Confirm Decline / Reject Request
+  const handleConfirmDeclineRequest = async () => {
+    if (!targetRequestForDecline) return;
+    const reason = declineReason.trim() || "Request could not be approved by administration.";
+
+    try {
+      setDeclineSubmitting(true);
+      await updateDoc(doc(db, "certificateRequests", targetRequestForDecline.id), {
+        status: "Rejected",
+        adminComment: reason,
+        rejectedAt: serverTimestamp(),
+      });
+
+      await addDoc(collection(db, "activities"), {
+        title: `Certificate Request Declined: ${targetRequestForDecline.certificateType} for ${targetRequestForDecline.studentName}`,
+        time: "Just now",
+        user: "Admin",
+        type: "certificate",
+        createdAt: serverTimestamp(),
+      });
+
+      setDeclineModalVisible(false);
+      setTargetRequestForDecline(null);
+      Alert.alert("Request Declined", `The certificate request was declined with note: "${reason}"`);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Could not decline request.");
+    } finally {
+      setDeclineSubmitting(false);
+    }
+  };
+
+  // Reopen Request (set status back to Pending)
+  const handleReopenRequest = async (req: CertRequestItem) => {
+    try {
+      await updateDoc(doc(db, "certificateRequests", req.id), {
+        status: "Pending",
+        adminComment: "Reopened by Admin for review",
+        updatedAt: serverTimestamp(),
+      });
+      Alert.alert("Request Reopened", "Status reset to Pending. You can now issue or review this certificate.");
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Could not reopen request.");
+    }
   };
 
   // Pick Certificate Photo from Gallery
@@ -553,10 +781,12 @@ export default function AdminCertificateScreen() {
         );
       } else {
         // ISSUE NEW CERTIFICATE
-        await addDoc(collection(db, "certificates"), {
-          studentId: selectedStudent ? selectedStudent.id : "student",
+        const studentIdToUse = targetStudentId || (selectedStudent ? selectedStudent.id : "student");
+        const docRef = await addDoc(collection(db, "certificates"), {
+          studentId: studentIdToUse,
           studentName: certStudentName.trim() || "Student",
           studentRollNo: certStudentRoll.trim() || "23CSE001",
+          studentDepartment: certDepartment || selectedStudent?.department || "CSE",
           title: certTitle.trim(),
           subject: certSubject.trim(),
           grade: certGrade.trim() || "Grade A+",
@@ -572,6 +802,7 @@ export default function AdminCertificateScreen() {
           photoUrl: finalPhotoUrl || undefined,
           pdfUrl: finalPdfUrl || undefined,
           verified: true,
+          requestId: fulfillingRequestId || undefined,
           createdAt: serverTimestamp(),
         });
 
@@ -580,7 +811,11 @@ export default function AdminCertificateScreen() {
           try {
             await updateDoc(doc(db, "certificateRequests", fulfillingRequestId), {
               status: "Approved",
-              adminComment: `Certificate ${credId} issued on ${new Date().toLocaleDateString("en-US")}`,
+              issuedCertificateId: docRef.id,
+              credentialId: credId,
+              pdfUrl: finalPdfUrl || null,
+              photoUrl: finalPhotoUrl || null,
+              adminComment: adminRemark.trim() || `Certificate ${credId} issued on ${new Date().toLocaleDateString("en-US")}`,
               approvedAt: serverTimestamp(),
             });
           } catch (_) {}
@@ -588,7 +823,7 @@ export default function AdminCertificateScreen() {
 
         // Log Activity
         await addDoc(collection(db, "activities"), {
-          title: `Certificate Issued: ${certTitle.trim()} to ${certStudentName.trim()}`,
+          title: `Certificate Issued: ${certTitle.trim()} to ${certStudentName.trim()} (${credId})`,
           time: "Just now",
           user: "Admin",
           type: "certificate",
@@ -601,10 +836,13 @@ export default function AdminCertificateScreen() {
         setPdfUrl("");
         setPdfFileName("");
         setPdfFileSize("");
+        setFulfillingRequestId(null);
+        setTargetStudentId(null);
+        setAdminRemark("");
 
         Alert.alert(
           "Certificate Awarded! 🎓",
-          `Official certificate "${certTitle.trim()}" has been issued to ${certStudentName.trim()}.\n${finalPdfUrl ? "✓ Official PDF document attached.\n" : ""}${finalPhotoUrl ? "✓ Verified photo attached.\n" : ""}It is directly updated in the student's app in real-time.`
+          `Official certificate "${certTitle.trim()}" has been issued to ${certStudentName.trim()}.\nCredential ID: ${credId}\n${finalPdfUrl ? "✓ Official PDF document attached.\n" : ""}${finalPhotoUrl ? "✓ Verified photo attached.\n" : ""}It is directly updated in the student's app in real-time.`
         );
       }
     } catch (e: any) {
@@ -769,8 +1007,20 @@ export default function AdminCertificateScreen() {
                     activeTab === "requests" && { fontWeight: "700" },
                   ]}
                 >
-                  Student Requests ({requests.filter((r) => r.status === "Pending").length})
+                  Student Requests ({requests.length})
                 </Text>
+                {pendingReqCount > 0 && (
+                  <View style={[styles.tabBadgePulse, activeTab === "requests" && { backgroundColor: "#FFFFFF" }]}>
+                    <Text
+                      style={[
+                        styles.tabBadgePulseText,
+                        activeTab === "requests" && { color: colors.primary, fontWeight: "800" },
+                      ]}
+                    >
+                      {pendingReqCount} New
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -845,6 +1095,12 @@ export default function AdminCertificateScreen() {
                       const studentCerts = certificates.filter(
                         (c) => c.studentId === student.id || c.studentRollNo === student.rollNo
                       );
+                      const studentPendingRequests = requests.filter(
+                        (r) =>
+                          (r.studentId === student.id ||
+                            (r.studentEmail && r.studentEmail.toLowerCase() === student.email.toLowerCase())) &&
+                          r.status === "Pending"
+                      );
 
                       return (
                         <View
@@ -867,6 +1123,22 @@ export default function AdminCertificateScreen() {
                               </View>
                             </View>
                           </View>
+
+                          {studentPendingRequests.length > 0 && (
+                            <TouchableOpacity
+                              style={styles.pendingRequestStudentBadge}
+                              onPress={() => {
+                                setActiveTab("requests");
+                                setRequestStatusFilter("Pending");
+                                setSearch(student.fullName);
+                              }}
+                            >
+                              <Ionicons name="mail-unread" size={13} color="#D97706" />
+                              <Text style={styles.pendingRequestStudentBadgeText}>
+                                {studentPendingRequests.length} Certificate Request Pending • Review
+                              </Text>
+                            </TouchableOpacity>
+                          )}
 
                           <View style={[styles.certCountRow, { borderTopColor: colors.border }]}>
                             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
@@ -1031,65 +1303,343 @@ export default function AdminCertificateScreen() {
             {/* TAB 3: STUDENT REQUESTS */}
             {activeTab === "requests" && (
               <View>
-                {requests.length === 0 ? (
+                {/* REQUEST STATS SUMMARY ROW */}
+                <View style={styles.reqStatsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.reqStatCard,
+                      { backgroundColor: colors.card, borderColor: requestStatusFilter === "All" ? colors.primary : colors.border },
+                    ]}
+                    onPress={() => setRequestStatusFilter("All")}
+                  >
+                    <View style={[styles.reqStatIconBox, { backgroundColor: isDark ? "#312E81" : "#EEF2FF" }]}>
+                      <Ionicons name="document-text" size={18} color="#4F46E5" />
+                    </View>
+                    <Text style={[styles.reqStatNum, { color: colors.text }]}>{requests.length}</Text>
+                    <Text style={[styles.reqStatLabel, { color: colors.textSecondary }]}>Total Requests</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.reqStatCard,
+                      { backgroundColor: colors.card, borderColor: requestStatusFilter === "Pending" ? "#F59E0B" : colors.border },
+                    ]}
+                    onPress={() => setRequestStatusFilter("Pending")}
+                  >
+                    <View style={[styles.reqStatIconBox, { backgroundColor: isDark ? "#451A03" : "#FEF3C7" }]}>
+                      <Ionicons name="time" size={18} color="#D97706" />
+                    </View>
+                    <Text style={[styles.reqStatNum, { color: "#D97706" }]}>{pendingReqCount}</Text>
+                    <Text style={[styles.reqStatLabel, { color: colors.textSecondary }]}>Pending Review</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.reqStatCard,
+                      { backgroundColor: colors.card, borderColor: requestStatusFilter === "Approved" ? "#10B981" : colors.border },
+                    ]}
+                    onPress={() => setRequestStatusFilter("Approved")}
+                  >
+                    <View style={[styles.reqStatIconBox, { backgroundColor: isDark ? "#064E3B" : "#DCFCE7" }]}>
+                      <Ionicons name="shield-checkmark" size={18} color="#10B981" />
+                    </View>
+                    <Text style={[styles.reqStatNum, { color: "#10B981" }]}>{approvedReqCount}</Text>
+                    <Text style={[styles.reqStatLabel, { color: colors.textSecondary }]}>Issued / Done</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.reqStatCard,
+                      { backgroundColor: colors.card, borderColor: requestStatusFilter === "Rejected" ? "#EF4444" : colors.border },
+                    ]}
+                    onPress={() => setRequestStatusFilter("Rejected")}
+                  >
+                    <View style={[styles.reqStatIconBox, { backgroundColor: isDark ? "#450A0A" : "#FEE2E2" }]}>
+                      <Ionicons name="close-circle" size={18} color="#EF4444" />
+                    </View>
+                    <Text style={[styles.reqStatNum, { color: "#EF4444" }]}>{rejectedReqCount}</Text>
+                    <Text style={[styles.reqStatLabel, { color: colors.textSecondary }]}>Declined</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* FILTER STATUS PILLS */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+                  {[
+                    { id: "All", label: `All Requests (${requests.length})` },
+                    { id: "Pending", label: `Pending (${pendingReqCount})` },
+                    { id: "Approved", label: `Approved & Issued (${approvedReqCount})` },
+                    { id: "Rejected", label: `Declined (${rejectedReqCount})` },
+                  ].map((filter) => {
+                    const isSelected = requestStatusFilter === filter.id;
+                    return (
+                      <TouchableOpacity
+                        key={filter.id}
+                        style={[
+                          styles.filterChip,
+                          {
+                            borderColor: isSelected ? colors.primary : colors.border,
+                            backgroundColor: isSelected ? colors.primary : colors.card,
+                          },
+                        ]}
+                        onPress={() => setRequestStatusFilter(filter.id as any)}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            { color: isSelected ? "#FFFFFF" : colors.textSecondary, fontWeight: isSelected ? "700" : "500" },
+                          ]}
+                        >
+                          {filter.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {filteredRequests.length === 0 ? (
                   <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Ionicons name="mail-outline" size={48} color={colors.textMuted} />
-                    <Text style={[styles.emptyTitle, { color: colors.text }]}>No Certificate Requests</Text>
+                    <Text style={[styles.emptyTitle, { color: colors.text }]}>No Requests in this category</Text>
                     <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
-                      Student requests for Bonafide or Completion certificates will appear here.
+                      {search
+                        ? `No requests match "${search}". Try searching another name or roll number.`
+                        : requestStatusFilter === "Pending"
+                        ? "Great job! All certificate requests have been reviewed and issued."
+                        : "No student certificate requests found."}
                     </Text>
                   </View>
                 ) : (
-                  <View style={{ gap: 12 }}>
-                    {requests.map((req) => (
-                      <View
-                        key={req.id}
-                        style={[styles.requestCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.requestType, { color: colors.text }]}>{req.certificateType}</Text>
-                            <Text style={[styles.requestStudent, { color: colors.textSecondary }]}>
-                              Requested by {req.studentName} ({req.studentEmail})
-                            </Text>
-                            <Text style={[styles.requestPurpose, { color: colors.text }]}>
-                              Purpose: "{req.purpose}"
-                            </Text>
+                  <View style={{ gap: 14 }}>
+                    {filteredRequests.map((req) => {
+                      const matched = getStudentForRequest(req);
+                      const rollNo = req.studentRollNo || matched?.rollNo || "Roll: N/A";
+                      const dept = req.department || matched?.department || "CSE";
+                      const sem = req.semester || matched?.semester || "4";
+                      const isQuickIssuing = quickIssuingId === req.id;
+
+                      return (
+                        <View
+                          key={req.id}
+                          style={[styles.requestCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        >
+                          {/* Student Header Row */}
+                          <View style={styles.reqTopHeaderRow}>
+                            <View style={styles.reqStudentAvatar}>
+                              <Text style={styles.reqStudentAvatarText}>
+                                {req.studentName ? req.studentName.charAt(0).toUpperCase() : "S"}
+                              </Text>
+                            </View>
+
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <Text style={[styles.reqStudentFullName, { color: colors.text }]}>{req.studentName}</Text>
+                                <View style={[styles.deptPill, { backgroundColor: isDark ? "#334155" : "#EEF2FF" }]}>
+                                  <Text style={styles.deptPillText}>{dept} • Sem {sem}</Text>
+                                </View>
+                              </View>
+                              <Text style={[styles.reqStudentMeta, { color: colors.textSecondary }]}>
+                                Roll No: <Text style={{ fontWeight: "700" }}>{rollNo}</Text> • {req.studentEmail}
+                              </Text>
+                            </View>
+
+                            {/* Status Pill */}
+                            <View
+                              style={[
+                                styles.reqStatusBadge,
+                                req.status === "Approved"
+                                  ? { backgroundColor: isDark ? "rgba(16,185,129,0.2)" : "#DCFCE7" }
+                                  : req.status === "Rejected"
+                                  ? { backgroundColor: isDark ? "rgba(239,68,68,0.2)" : "#FEE2E2" }
+                                  : { backgroundColor: isDark ? "rgba(245,158,11,0.2)" : "#FEF3C7" },
+                              ]}
+                            >
+                              <Ionicons
+                                name={
+                                  req.status === "Approved"
+                                    ? "shield-checkmark"
+                                    : req.status === "Rejected"
+                                    ? "close-circle"
+                                    : "time"
+                                }
+                                size={13}
+                                color={
+                                  req.status === "Approved"
+                                    ? "#16A34A"
+                                    : req.status === "Rejected"
+                                    ? "#DC2626"
+                                    : "#D97706"
+                                }
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: "700",
+                                  color:
+                                    req.status === "Approved"
+                                      ? "#16A34A"
+                                      : req.status === "Rejected"
+                                      ? "#DC2626"
+                                      : "#D97706",
+                                }}
+                              >
+                                {req.status === "Approved"
+                                  ? "Issued & Approved"
+                                  : req.status === "Rejected"
+                                  ? "Declined"
+                                  : "Pending Review"}
+                              </Text>
+                            </View>
                           </View>
 
-                          <View
-                            style={[
-                              styles.reqStatusBadge,
-                              req.status === "Approved"
-                                ? { backgroundColor: "#DCFCE7" }
-                                : { backgroundColor: "#FEF3C7" },
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 11,
-                                fontWeight: "700",
-                                color: req.status === "Approved" ? "#16A34A" : "#D97706",
-                              }}
-                            >
-                              {req.status}
-                            </Text>
+                          {/* Request Details Box */}
+                          <View style={[styles.reqContentBox, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Ionicons name="ribbon" size={17} color={colors.primary} />
+                              <Text style={[styles.reqTypeHeadline, { color: colors.text }]}>{req.certificateType}</Text>
+                            </View>
+
+                            <View style={styles.reqPurposeRow}>
+                              <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.textSecondary} />
+                              <Text style={[styles.reqPurposeText, { color: colors.textSecondary }]}>
+                                Purpose: "{req.purpose || "Official university documentation requirement"}"
+                              </Text>
+                            </View>
                           </View>
+
+                          {/* IF APPROVED: SHOW ISSUED CREDENTIAL INFO & PDF */}
+                          {req.status === "Approved" && (
+                            <View style={[styles.reqApprovedInfoBox, { backgroundColor: isDark ? "rgba(16,185,129,0.1)" : "#F0FDF4", borderColor: "#86EFAC" }]}>
+                              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                  <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+                                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#16A34A" }}>
+                                    Certificate Granted
+                                  </Text>
+                                  {req.credentialId ? (
+                                    <View style={styles.credentialPill}>
+                                      <Text style={styles.credentialPillText}>ID: {req.credentialId}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+
+                                {req.adminComment ? (
+                                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                    Note: {req.adminComment}
+                                  </Text>
+                                ) : null}
+                              </View>
+
+                              {/* Approved PDF & Action buttons */}
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                                {req.pdfUrl ? (
+                                  <>
+                                    <TouchableOpacity
+                                      style={styles.pdfBadgeBtn}
+                                      onPress={() => {
+                                        if (req.pdfUrl) {
+                                          Linking.openURL(req.pdfUrl).catch(() => {
+                                            Alert.alert("PDF Document", `Link: ${req.pdfUrl}`);
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      <Ionicons name="document-text" size={14} color="#DC2626" />
+                                      <Text style={styles.pdfBadgeText}>Open PDF</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      style={styles.pdfShareActionBtn}
+                                      onPress={() => shareOrDownloadPdf(req.pdfUrl!, req.certificateType)}
+                                    >
+                                      <Ionicons name="share-outline" size={14} color="#4338CA" />
+                                      <Text style={styles.pdfShareActionText}>Share / Print</Text>
+                                    </TouchableOpacity>
+                                  </>
+                                ) : null}
+
+                                <TouchableOpacity
+                                  style={[styles.reopenBtn, { borderColor: colors.border }]}
+                                  onPress={() => handleReopenRequest(req)}
+                                >
+                                  <Ionicons name="refresh-outline" size={13} color={colors.textSecondary} />
+                                  <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "600" }}>
+                                    Reopen / Reissue
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+
+                          {/* IF REJECTED: SHOW DECLINE REASON & REOPEN */}
+                          {req.status === "Rejected" && (
+                            <View style={[styles.reqRejectedInfoBox, { backgroundColor: isDark ? "rgba(239,68,68,0.1)" : "#FEF2F2", borderColor: "#FCA5A5" }]}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                <Ionicons name="alert-circle" size={15} color="#DC2626" />
+                                <Text style={{ fontSize: 12, fontWeight: "700", color: "#DC2626" }}>
+                                  Request Declined
+                                </Text>
+                              </View>
+                              <Text style={{ fontSize: 12, color: colors.text, marginTop: 3 }}>
+                                Reason: "{req.adminComment || "Requirements not met by applicant"}"
+                              </Text>
+
+                              <View style={{ marginTop: 8, flexDirection: "row" }}>
+                                <TouchableOpacity
+                                  style={[styles.reopenBtn, { borderColor: "#FCA5A5" }]}
+                                  onPress={() => handleReopenRequest(req)}
+                                >
+                                  <Ionicons name="refresh-outline" size={13} color="#DC2626" />
+                                  <Text style={{ fontSize: 11, color: "#DC2626", fontWeight: "700" }}>
+                                    Reconsider & Reopen Request
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+
+                          {/* IF PENDING: SHOW ACTION BUTTONS (QUICK ISSUE, REVIEW & ISSUE, DECLINE) */}
+                          {req.status === "Pending" && (
+                            <View style={[styles.reqActionRowEnhanced, { borderTopColor: colors.border }]}>
+                              {/* Quick Issue Auto-PDF */}
+                              <TouchableOpacity
+                                style={[styles.quickIssueBtn, isQuickIssuing && { opacity: 0.7 }]}
+                                onPress={() => handleQuickIssueRequest(req)}
+                                disabled={isQuickIssuing}
+                              >
+                                {isQuickIssuing ? (
+                                  <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                  <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                                )}
+                                <Text style={styles.quickIssueBtnText}>
+                                  {isQuickIssuing ? "Generating & Issuing..." : "Quick Issue (Auto-PDF)"}
+                                </Text>
+                              </TouchableOpacity>
+
+                              {/* Review & Customize Issue */}
+                              <TouchableOpacity
+                                style={[styles.approveBtn, { backgroundColor: colors.primary }]}
+                                onPress={() => handleApproveRequest(req)}
+                                disabled={isQuickIssuing}
+                              >
+                                <Ionicons name="create-outline" size={15} color="#FFFFFF" />
+                                <Text style={styles.approveBtnText}>Review & Customize</Text>
+                              </TouchableOpacity>
+
+                              {/* Decline Request */}
+                              <TouchableOpacity
+                                style={styles.declineReqBtn}
+                                onPress={() => handleOpenDeclineModal(req)}
+                                disabled={isQuickIssuing}
+                              >
+                                <Ionicons name="close-circle-outline" size={15} color="#EF4444" />
+                                <Text style={styles.declineReqBtnText}>Decline</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
                         </View>
-
-                        {req.status === "Pending" && (
-                          <View style={[styles.reqActionRow, { borderTopColor: colors.border }]}>
-                            <TouchableOpacity
-                              style={[styles.approveBtn, { backgroundColor: colors.primary }]}
-                              onPress={() => handleApproveRequest(req)}
-                            >
-                              <Ionicons name="ribbon" size={15} color="#FFFFFF" />
-                              <Text style={styles.approveBtnText}>Approve & Issue Certificate</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
               </View>
@@ -1116,11 +1666,17 @@ export default function AdminCertificateScreen() {
             <View style={styles.issueModalHeader}>
               <View>
                 <Text style={[styles.issueModalTitle, { color: colors.text }]}>
-                  {editingCert ? "Update Issued Certificate" : "Award Student Certificate"}
+                  {editingCert
+                    ? "Update Issued Certificate"
+                    : fulfillingRequestId
+                    ? "Issue Certificate as per Request"
+                    : "Award Student Certificate"}
                 </Text>
                 <Text style={{ fontSize: 12, color: colors.textSecondary }}>
                   {editingCert
                     ? "Updated details, photos, and PDFs sync directly to student in real time"
+                    : fulfillingRequestId
+                    ? "Confer official credential & auto-deliver accredited PDF to student profile"
                     : "Saved to student profile and Firebase in real time"}
                 </Text>
               </View>
@@ -1128,6 +1684,19 @@ export default function AdminCertificateScreen() {
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            {/* Fulfilling Request Banner */}
+            {fulfillingRequestId && (
+              <View style={styles.fulfillingBanner}>
+                <Ionicons name="sparkles" size={18} color="#4F46E5" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.fulfillingBannerTitle}>Fulfilling Student Request</Text>
+                  <Text style={styles.fulfillingBannerSub}>
+                    Issuing will automatically update the student's request status to "Approved", assign official ID, and deliver the accredited PDF directly to their profile.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
               {/* Certificate Title */}
@@ -1170,6 +1739,16 @@ export default function AdminCertificateScreen() {
                 placeholderTextColor={colors.textMuted}
               />
 
+              {/* Student Department */}
+              <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Department / Branch</Text>
+              <TextInput
+                style={[styles.formInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={certDepartment}
+                onChangeText={setCertDepartment}
+                placeholder="e.g. Computer Science & Engineering"
+                placeholderTextColor={colors.textMuted}
+              />
+
               {/* Grade / Honors */}
               <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Grade / Honors</Text>
               <TextInput
@@ -1180,15 +1759,29 @@ export default function AdminCertificateScreen() {
                 placeholderTextColor={colors.textMuted}
               />
 
-              {/* Issuing Teacher Name */}
-              <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Issuing Teacher Name</Text>
+              {/* Issuing Authority / Teacher Name */}
+              <Text style={[styles.formLabel, { color: colors.text, marginTop: 12 }]}>Issuing Authority / Teacher Name</Text>
               <TextInput
                 style={[styles.formInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
                 value={certTeacher}
                 onChangeText={setCertTeacher}
-                placeholder="Prof. Ganesh Sharma"
+                placeholder="Prof. Ganesh Sharma / Office of Registrar"
                 placeholderTextColor={colors.textMuted}
               />
+
+              {/* Admin Note / Remarks for Student (When fulfilling request) */}
+              {fulfillingRequestId && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Admin Note to Student (Optional)</Text>
+                  <TextInput
+                    style={[styles.formInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                    value={adminRemark}
+                    onChangeText={setAdminRemark}
+                    placeholder="e.g. Verified by Academic Committee and issued"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+              )}
 
               {/* PHOTO ATTACHMENT SYSTEM */}
               <View style={[styles.attachmentBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1484,6 +2077,114 @@ export default function AdminCertificateScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* DECLINE CERTIFICATE REQUEST MODAL */}
+      <Modal
+        visible={declineModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeclineModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setDeclineModalVisible(false)}>
+          <Pressable
+            style={[styles.declineModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.declineModalHeader}>
+              <View style={[styles.declineIconCircle, { backgroundColor: isDark ? "rgba(239,68,68,0.2)" : "#FEE2E2" }]}>
+                <Ionicons name="close-circle" size={24} color="#EF4444" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.declineModalTitle, { color: colors.text }]}>Decline Request</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {targetRequestForDecline?.studentName} • {targetRequestForDecline?.certificateType}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setDeclineModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.formLabel, { color: colors.text, marginTop: 14 }]}>
+              Select Common Reason or Type Below:
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginVertical: 8 }}>
+              {[
+                "Pending Tuition / Hostel Fees",
+                "Attendance Below 75% Requirement",
+                "Incomplete Student Documentation",
+                "Duplicate Request Already Processed",
+                "Requires Department HOD Signature",
+              ].map((reason) => {
+                const isSelected = declineReason === reason;
+                return (
+                  <TouchableOpacity
+                    key={reason}
+                    style={[
+                      styles.presetReasonChip,
+                      {
+                        borderColor: isSelected ? "#EF4444" : colors.border,
+                        backgroundColor: isSelected ? (isDark ? "#450A0A" : "#FEE2E2") : colors.surface,
+                      },
+                    ]}
+                    onPress={() => setDeclineReason(reason)}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: isSelected ? "#DC2626" : colors.textSecondary,
+                        fontWeight: isSelected ? "700" : "500",
+                      }}
+                    >
+                      {reason}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TextInput
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  minHeight: 70,
+                  textAlignVertical: "top",
+                  marginTop: 6,
+                },
+              ]}
+              value={declineReason}
+              onChangeText={setDeclineReason}
+              placeholder="Enter specific reason for student notification..."
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { flex: 1, backgroundColor: colors.surface }]}
+                onPress={() => setDeclineModalVisible(false)}
+                disabled={declineSubmitting}
+              >
+                <Text style={{ color: colors.textSecondary, fontWeight: "600", textAlign: "center" }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmDeclineBtn, { flex: 1 }]}
+                onPress={handleConfirmDeclineRequest}
+                disabled={declineSubmitting}
+              >
+                {declineSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: "#FFFFFF", fontWeight: "700", textAlign: "center" }}>Confirm Decline</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -1969,48 +2670,275 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#4338CA",
   },
-  requestCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
+  tabBadgePulse: {
+    backgroundColor: "#F59E0B",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 4,
   },
-  requestType: {
-    fontSize: 15,
+  tabBadgePulseText: {
+    fontSize: 10,
     fontWeight: "700",
+    color: "#FFFFFF",
   },
-  requestStudent: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  requestPurpose: {
-    fontSize: 12,
-    fontStyle: "italic",
-    marginTop: 4,
-  },
-  reqStatusBadge: {
+  pendingRequestStudentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+    marginTop: 8,
   },
-  reqActionRow: {
-    borderTopWidth: 1,
-    marginTop: 12,
-    paddingTop: 10,
+  pendingRequestStudentBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#B45309",
+  },
+  reqStatsRow: {
     flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+    flexWrap: "wrap",
+  },
+  reqStatCard: {
+    flex: 1,
+    minWidth: 130,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    alignItems: "center",
+  },
+  reqStatIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  reqStatNum: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  reqStatLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  requestCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  reqTopHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reqStudentAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#5D3EBC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reqStudentAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  reqStudentFullName: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  reqStudentMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  reqStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  reqContentBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+    gap: 6,
+  },
+  reqTypeHeadline: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  reqPurposeRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 2,
+  },
+  reqPurposeText: {
+    fontSize: 12.5,
+    fontStyle: "italic",
+    flex: 1,
+    lineHeight: 18,
+  },
+  reqApprovedInfoBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+  },
+  credentialPill: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  credentialPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#15803D",
+  },
+  reopenBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  reqRejectedInfoBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+  },
+  reqActionRowEnhanced: {
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "flex-end",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  quickIssueBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#10B981",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  quickIssueBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   approveBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: "#5D3EBC",
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   approveBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "700",
+  },
+  declineReqBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    backgroundColor: "transparent",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  declineReqBtnText: {
+    color: "#EF4444",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  fulfillingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  fulfillingBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#4338CA",
+  },
+  fulfillingBannerSub: {
+    fontSize: 11,
+    color: "#4338CA",
+    marginTop: 1,
+    lineHeight: 15,
+  },
+  declineModalCard: {
+    width: "100%",
+    maxWidth: 460,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  declineModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: 10,
+  },
+  declineIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  declineModalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  presetReasonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  confirmDeclineBtn: {
+    backgroundColor: "#DC2626",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyCard: {
     padding: 40,

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Image } from "react-native";
 import { router } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -38,9 +38,11 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.logoCircle}>
-        <Text style={styles.logoText}>C</Text>
-      </View>
+      <Image
+        source={require("../../assets/images/icon.png")}
+        style={styles.logoImage}
+        resizeMode="contain"
+      />
 
       <Text style={styles.title}>Campusly</Text>
       <Text style={styles.subtitle}>Smart College Management</Text>
@@ -56,6 +58,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     alignItems: "center",
     justifyContent: "center",
+  },
+  logoImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 24,
+    marginBottom: 16,
   },
   logoCircle: {
     width: 72,

@@ -168,7 +168,17 @@ In short: **DBMS manages data**, while **DSA helps you work with data efficientl
 
 // Intelligent student knowledge base generator
 function generateIntelligentStudentResponse(prompt: string, studentName: string): string {
-  const lower = prompt.toLowerCase();
+  const trimmed = prompt.trim();
+  const lower = trimmed.toLowerCase();
+
+  // Friendly Greetings Handling
+  if (
+    /^(hi|hello|hey|good\s*(morning|afternoon|evening)|greetings|hola)\b/i.test(
+      trimmed
+    )
+  ) {
+    return `Hello, **${studentName}**! 👋 How can I help you with your studies or campus activities today? Feel free to ask any academic doubts, study plans, or timetable questions!`;
+  }
 
   // BODMAS / Mathematical Evaluation Rule
   if (
@@ -288,16 +298,10 @@ A Binary Search Tree is a node-based binary tree data structure with the followi
   }
 
   // General helpful response
-  return `That's an important topic, ${studentName}!
-
-Here is a clear breakdown for you:
-- **Concept Overview**: Understand the core objective and why this concept is used in real-world systems.
-- **Key Takeaways**:
-  1. Always start by identifying the inputs, constraints, and desired output.
-  2. Break complex problems into smaller, manageable sub-problems.
-  3. Verify with sample test cases and boundary conditions.
-
-Feel free to ask follow-up questions, request code examples, or ask me to test your understanding! 🚀`;
+  return `Here is some guidance to help you with that, **${studentName}**:\n\n` +
+    `- **Core Concept**: Understand the primary objective and fundamental principles first.\n` +
+    `- **Key Advice**: Break complex topics or questions into smaller, manageable steps.\n\n` +
+    `Feel free to ask follow-up questions, request specific code examples, or ask me to explain any difficult part! 🚀`;
 }
 
 // Stylized cute robot avatar matching the screenshot
