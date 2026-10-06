@@ -61,6 +61,11 @@ export default function RootLayout() {
       <Stack.Screen name="gate-pass" />
       <Stack.Screen name="document-request" />
       <Stack.Screen name="leave-gatepass" />
+      <Stack.Screen name="teacher" />
+      <Stack.Screen name="hostel-manager" />
+      <Stack.Screen name="mess-manager" />
+      <Stack.Screen name="fee-manager" />
+      <Stack.Screen name="notice-manager" />
       <Stack.Screen name="ai-assistant" />
     </Stack>
       </LanguageProvider>

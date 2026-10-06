@@ -35,6 +35,7 @@ import { useAppTheme } from "../../context/ThemeContext";
 import AdminThemeToggle from "../../components/admin/AdminThemeToggle";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import AdminTopBar from "../../components/admin/AdminTopBar";
+import RoleSwitcherModal, { CAMPUSLY_ROLES } from "../../components/RoleSwitcherModal";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS
@@ -88,6 +89,7 @@ export default function AdminDashboard() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   // Modals for Admin Add/Remove
+  const [roleSwitcherVisible, setRoleSwitcherVisible] = useState(false);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
   const [noticeModalVisible, setNoticeModalVisible] = useState(false);
   const [savingAction, setSavingAction] = useState(false);
@@ -513,13 +515,35 @@ export default function AdminDashboard() {
             searchPlaceholder="Search students, faculty, notices, complaints..."
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
             rightActions={
-              <TouchableOpacity
-                style={styles.quickAddNoticeBtn}
-                onPress={() => setNoticeModalVisible(true)}
-              >
-                <Ionicons name="add" size={16} color="#FFFFFF" />
-                <Text style={styles.quickAddNoticeText}>Post Notice</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: "#EEF2FF",
+                    borderWidth: 1,
+                    borderColor: "#C7D2FE",
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    gap: 6,
+                  }}
+                  onPress={() => setRoleSwitcherVisible(true)}
+                >
+                  <Ionicons name="swap-horizontal" size={16} color="#4F46E5" />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#4F46E5" }}>
+                    Switch Role
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickAddNoticeBtn}
+                  onPress={() => setNoticeModalVisible(true)}
+                >
+                  <Ionicons name="add" size={16} color="#FFFFFF" />
+                  <Text style={styles.quickAddNoticeText}>Post Notice</Text>
+                </TouchableOpacity>
+              </View>
             }
             adminName={adminName}
           />
@@ -638,6 +662,165 @@ export default function AdminDashboard() {
                   <Text style={styles.kpiTrend}>Active announcements</Text>
                 </View>
               </TouchableOpacity>
+            </View>
+
+            {/* CAMPUSLY ROLE DASHBOARDS SYSTEM BAR */}
+            <View
+              style={{
+                backgroundColor: colors.adminCard,
+                borderColor: colors.adminCardBorder,
+                borderWidth: 1,
+                borderRadius: 16,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="grid" size={16} color="#7C3AED" />
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: colors.adminText }}>
+                    Role Dashboards Quick Switch
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setRoleSwitcherVisible(true)}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#4F46E5" }}>
+                    View All Roles →
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {CAMPUSLY_ROLES.map((r) => (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: r.bgColor,
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      gap: 6,
+                      borderWidth: 1,
+                      borderColor: r.color + "33",
+                    }}
+                    onPress={() => router.push(r.route as any)}
+                  >
+                    <Ionicons name={r.icon} size={16} color={r.color} />
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: r.color }}>
+                      {r.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* 16 CAMPUS MANAGEMENT MODULES GRID */}
+            <View
+              style={{
+                backgroundColor: colors.adminCard,
+                borderColor: colors.adminCardBorder,
+                borderWidth: 1,
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 16,
+              }}
+            >
+              <View style={{ marginBottom: 14 }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: colors.adminText }}>
+                  Campus Management Modules
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.adminTextSecondary, marginTop: 2 }}>
+                  Direct access to all 16 college operational departments
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 12,
+                }}
+              >
+                {[
+                  { title: "Student Management", sub: "View & manage students", icon: "people", route: "/admin/student", color: "#2563EB", bg: "#EFF6FF" },
+                  { title: "Faculty Management", sub: "Manage faculty & staff", icon: "school", route: "/admin/faculty", color: "#7C3AED", bg: "#F5F3FF" },
+                  { title: "Academics", sub: "Subjects, exams, results", icon: "book", route: "/admin/academics", color: "#0284C7", bg: "#F0F9FF" },
+                  { title: "Attendance", sub: "Track attendance records", icon: "checkbox", route: "/admin/attendence", color: "#059669", bg: "#ECFDF5" },
+                  { title: "Hostel", sub: "Rooms & allocation", icon: "home", route: "/admin/hostel", color: "#10B981", bg: "#D1FAE5" },
+                  { title: "Mess", sub: "Menu & operations", icon: "restaurant", route: "/admin/mess", color: "#EA580C", bg: "#FFF7ED" },
+                  { title: "Fees", sub: "Fee records & payments", icon: "wallet", route: "/admin/fees", color: "#0D9488", bg: "#F0FDFA" },
+                  { title: "Certificates", sub: "Generate certificates", icon: "ribbon", route: "/admin/certificate", color: "#8B5CF6", bg: "#EDE9FE" },
+                  { title: "Notices", sub: "Publish announcements", icon: "megaphone", route: "/admin/notices", color: "#DB2777", bg: "#FDF2F8" },
+                  { title: "Requests", sub: "View & process requests", icon: "document-text", route: "/admin/requests", color: "#F59E0B", bg: "#FEF3C7" },
+                  { title: "Gate Pass", sub: "Manage gate passes", icon: "key", route: "/leave-gatepass", color: "#6366F1", bg: "#EEF2FF" },
+                  { title: "Leave", sub: "Approve leave requests", icon: "calendar", route: "/leave-gatepass", color: "#4F46E5", bg: "#EEF2FF" },
+                  { title: "Reports", sub: "View reports & analytics", icon: "bar-chart", route: "/admin/reports", color: "#0284C7", bg: "#E0F2FE" },
+                  { title: "User & Role Management", sub: "Manage user roles", icon: "shield-checkmark", action: () => setRoleSwitcherVisible(true), color: "#DC2626", bg: "#FEF2F2" },
+                  { title: "AI Assistant", sub: "Campus AI assistant", icon: "sparkles", route: "/admin/ai-assistant", color: "#9333EA", bg: "#FAF5FF" },
+                  { title: "System Settings", sub: "App configuration", icon: "settings", route: "/admin/settings", color: "#475569", bg: "#F1F5F9" },
+                ].map((mod, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={{
+                      width: isDesktop ? "23.5%" : "47.5%",
+                      backgroundColor: isDark ? "#1E1633" : "#FFFFFF",
+                      borderWidth: 1,
+                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                      borderRadius: 14,
+                      padding: 12,
+                    }}
+                    onPress={() => {
+                      if (mod.action) {
+                        mod.action();
+                      } else if (mod.route) {
+                        router.push(mod.route as any);
+                      }
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        backgroundColor: mod.bg,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <Ionicons name={mod.icon as any} size={20} color={mod.color} />
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "800",
+                        color: colors.adminText,
+                      }}
+                    >
+                      {mod.title}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 11,
+                        color: colors.adminTextSecondary,
+                        marginTop: 2,
+                      }}
+                    >
+                      {mod.sub}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
 
             {/* =======================================================
@@ -1369,6 +1552,13 @@ export default function AdminDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* ROLE SWITCHER MODAL */}
+      <RoleSwitcherModal
+        visible={roleSwitcherVisible}
+        currentRole="admin"
+        onClose={() => setRoleSwitcherVisible(false)}
+      />
     </SafeAreaView>
   );
 }

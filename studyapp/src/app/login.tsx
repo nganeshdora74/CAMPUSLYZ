@@ -23,7 +23,14 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 
 import { auth, db } from "../firebase/config";
 
-type UserRole = "admin" | "teacher" | "student";
+type UserRole =
+  | "admin"
+  | "teacher"
+  | "student"
+  | "hostel_manager"
+  | "mess_manager"
+  | "fee_manager"
+  | "notice_manager";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -52,7 +59,7 @@ export default function LoginScreen() {
           );
           return;
         }
-        if (data.role === "admin" || data.role === "teacher" || data.role === "student") {
+        if (data.role) {
           finalRole = data.role as UserRole;
         } else if (data.isTeacher) {
           finalRole = "teacher";
@@ -62,6 +69,14 @@ export default function LoginScreen() {
             finalRole = "admin";
           } else if (normalizedEmail.includes("teacher") || normalizedEmail.includes("faculty")) {
             finalRole = "teacher";
+          } else if (normalizedEmail.includes("hostel")) {
+            finalRole = "hostel_manager";
+          } else if (normalizedEmail.includes("mess")) {
+            finalRole = "mess_manager";
+          } else if (normalizedEmail.includes("fee")) {
+            finalRole = "fee_manager";
+          } else if (normalizedEmail.includes("notice")) {
+            finalRole = "notice_manager";
           } else {
             finalRole = "student";
           }
@@ -73,6 +88,14 @@ export default function LoginScreen() {
           finalRole = "admin";
         } else if (normalizedEmail.includes("teacher") || normalizedEmail.includes("faculty")) {
           finalRole = "teacher";
+        } else if (normalizedEmail.includes("hostel")) {
+          finalRole = "hostel_manager";
+        } else if (normalizedEmail.includes("mess")) {
+          finalRole = "mess_manager";
+        } else if (normalizedEmail.includes("fee")) {
+          finalRole = "fee_manager";
+        } else if (normalizedEmail.includes("notice")) {
+          finalRole = "notice_manager";
         } else {
           finalRole = "student";
         }
@@ -86,7 +109,15 @@ export default function LoginScreen() {
               (finalRole === "admin"
                 ? "Admin User"
                 : finalRole === "teacher"
-                ? "Prof. Ganesh Sharma"
+                ? "Dr. S. Reddy"
+                : finalRole === "hostel_manager"
+                ? "Rahul Sharma"
+                : finalRole === "mess_manager"
+                ? "Priya Nair"
+                : finalRole === "fee_manager"
+                ? "Vikram Singh"
+                : finalRole === "notice_manager"
+                ? "Anita Verma"
                 : "Campusly Student"),
             role: finalRole,
             isTeacher: finalRole === "teacher",
@@ -103,6 +134,14 @@ export default function LoginScreen() {
         finalRole = "admin";
       } else if (normalizedEmail.includes("teacher") || normalizedEmail.includes("faculty")) {
         finalRole = "teacher";
+      } else if (normalizedEmail.includes("hostel")) {
+        finalRole = "hostel_manager";
+      } else if (normalizedEmail.includes("mess")) {
+        finalRole = "mess_manager";
+      } else if (normalizedEmail.includes("fee")) {
+        finalRole = "fee_manager";
+      } else if (normalizedEmail.includes("notice")) {
+        finalRole = "notice_manager";
       } else {
         finalRole = "student";
       }
@@ -111,7 +150,15 @@ export default function LoginScreen() {
     if (finalRole === "admin") {
       router.replace("/admin");
     } else if (finalRole === "teacher") {
-      router.replace("/admin/attendence");
+      router.replace("/teacher");
+    } else if (finalRole === "hostel_manager") {
+      router.replace("/hostel-manager");
+    } else if (finalRole === "mess_manager") {
+      router.replace("/mess-manager");
+    } else if (finalRole === "fee_manager") {
+      router.replace("/fee-manager");
+    } else if (finalRole === "notice_manager") {
+      router.replace("/notice-manager");
     } else {
       router.replace("/(tab)/home");
     }
@@ -167,7 +214,7 @@ export default function LoginScreen() {
   };
 
   // Quick 1-Tap Login & Provisioning
-  const handleQuickLogin = async (roleType: "admin" | "teacher" | "student") => {
+  const handleQuickLogin = async (roleType: UserRole) => {
     if (loading || quickLoading) return;
     setQuickLoading(roleType);
 
@@ -175,13 +222,30 @@ export default function LoginScreen() {
       roleType === "admin"
         ? "tdebuggers0.admin@gmail.com"
         : roleType === "teacher"
-        ? "prof.sharma.teacher@campusly.edu"
+        ? "prof.reddy.teacher@campusly.edu"
+        : roleType === "hostel_manager"
+        ? "rahul.hostel@campusly.edu"
+        : roleType === "mess_manager"
+        ? "priya.mess@campusly.edu"
+        : roleType === "fee_manager"
+        ? "vikram.fee@campusly.edu"
+        : roleType === "notice_manager"
+        ? "anita.notice@campusly.edu"
         : "demo.student@campusly.edu";
+
     const testPassword =
       roleType === "admin"
         ? "Admin@123456"
         : roleType === "teacher"
         ? "Teacher@123456"
+        : roleType === "hostel_manager"
+        ? "Hostel@123456"
+        : roleType === "mess_manager"
+        ? "Mess@123456"
+        : roleType === "fee_manager"
+        ? "Fee@123456"
+        : roleType === "notice_manager"
+        ? "Notice@123456"
         : "Student@123456";
 
     setEmail(testEmail);
@@ -237,17 +301,27 @@ export default function LoginScreen() {
             }
           }
 
+          const fullName =
+            roleType === "admin"
+              ? "Campusly Administrator"
+              : roleType === "teacher"
+              ? "Dr. S. Reddy"
+              : roleType === "hostel_manager"
+              ? "Rahul Sharma"
+              : roleType === "mess_manager"
+              ? "Priya Nair"
+              : roleType === "fee_manager"
+              ? "Vikram Singh"
+              : roleType === "notice_manager"
+              ? "Anita Verma"
+              : "Demo Student";
+
           await setDoc(
             userRef,
             {
               uid: user.uid,
               email: testEmail,
-              fullName:
-                roleType === "admin"
-                  ? "Campusly Administrator"
-                  : roleType === "teacher"
-                  ? "Prof. Ganesh Sharma"
-                  : "Demo Student",
+              fullName,
               role: roleType,
               isTeacher: roleType === "teacher",
               teacherId: roleType === "teacher" ? "TEACH-CSE-101" : undefined,
@@ -264,7 +338,15 @@ export default function LoginScreen() {
         if (roleType === "admin") {
           router.replace("/admin");
         } else if (roleType === "teacher") {
-          router.replace("/admin/attendence");
+          router.replace("/teacher");
+        } else if (roleType === "hostel_manager") {
+          router.replace("/hostel-manager");
+        } else if (roleType === "mess_manager") {
+          router.replace("/mess-manager");
+        } else if (roleType === "fee_manager") {
+          router.replace("/fee-manager");
+        } else if (roleType === "notice_manager") {
+          router.replace("/notice-manager");
         } else {
           router.replace("/(tab)/home");
         }
@@ -327,42 +409,38 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.description}>
-            Sign in as Admin or Student to access portal features.
+            Sign in with your role account or use 1-Tap quick login below.
           </Text>
 
           {/* 1-TAP QUICK LOGINS */}
           <View style={styles.quickLoginBox}>
-            <Text style={styles.quickLoginTitle}>Quick 1-Tap Login for Testing Roles:</Text>
-            <View style={styles.quickLoginButtonsRow}>
-              <TouchableOpacity
-                style={[styles.quickBtn, styles.quickAdminBtn]}
-                onPress={() => handleQuickLogin("admin")}
-                disabled={loading || quickLoading !== null}
-              >
-                {quickLoading === "admin" ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.quickBtnIcon}>🛡️</Text>
-                    <Text style={styles.quickBtnText}>Admin</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.quickBtn, styles.quickStudentBtn]}
-                onPress={() => handleQuickLogin("student")}
-                disabled={loading || quickLoading !== null}
-              >
-                {quickLoading === "student" ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={styles.quickBtnIcon}>🎓</Text>
-                    <Text style={styles.quickBtnText}>Student</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+            <Text style={styles.quickLoginTitle}>Quick 1-Tap Login for Testing Role Dashboards:</Text>
+            <View style={styles.quickChipsGrid}>
+              {[
+                { id: "student" as const, label: "Student", icon: "🎓", bg: "#7C3AED" },
+                { id: "teacher" as const, label: "Teacher", icon: "👨‍🏫", bg: "#2563EB" },
+                { id: "hostel_manager" as const, label: "Hostel", icon: "🏨", bg: "#059669" },
+                { id: "mess_manager" as const, label: "Mess", icon: "🍽️", bg: "#EA580C" },
+                { id: "fee_manager" as const, label: "Fees", icon: "💰", bg: "#0284C7" },
+                { id: "notice_manager" as const, label: "Notices", icon: "📢", bg: "#DB2777" },
+                { id: "admin" as const, label: "Admin", icon: "🛡️", bg: "#1E1338" },
+              ].map((r) => (
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.quickChip, { backgroundColor: r.bg }]}
+                  onPress={() => handleQuickLogin(r.id)}
+                  disabled={loading || quickLoading !== null}
+                >
+                  {quickLoading === r.id ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.quickChipIcon}>{r.icon}</Text>
+                      <Text style={styles.quickChipText}>{r.label}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -537,6 +615,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#475569",
     marginBottom: 6,
+  },
+  quickChipsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  quickChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  quickChipIcon: {
+    fontSize: 11,
+  },
+  quickChipText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
   quickLoginButtonsRow: {
     flexDirection: "row",

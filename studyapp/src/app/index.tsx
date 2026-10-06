@@ -11,12 +11,22 @@ export default function SplashScreen() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          const role = userDoc.exists() ? userDoc.data()?.role : null;
+          const rawRole = (userDoc.exists() ? userDoc.data()?.role : "") || "";
+          const role = rawRole.toLowerCase();
           const email = (user.email || "").toLowerCase();
 
           if (role === "admin" || email.includes("admin")) {
             router.replace("/admin");
+          } else if (role === "teacher" || role === "faculty" || email.includes("teacher")) {
+            router.replace("/teacher");
+          } else if (role === "hostel_manager" || role === "hostel" || email.includes("hostel")) {
+            router.replace("/hostel-manager");
+          } else if (role === "mess_manager" || role === "mess" || email.includes("mess")) {
+            router.replace("/mess-manager");
+          } else if (role === "fee_manager" || role === "fees" || email.includes("fee")) {
+            router.replace("/fee-manager");
+          } else if (role === "notice_manager" || role === "notices" || email.includes("notice")) {
+            router.replace("/notice-manager");
           } else {
             router.replace("/(tab)/home");
           }
@@ -24,6 +34,16 @@ export default function SplashScreen() {
           const email = (user.email || "").toLowerCase();
           if (email.includes("admin")) {
             router.replace("/admin");
+          } else if (email.includes("teacher")) {
+            router.replace("/teacher");
+          } else if (email.includes("hostel")) {
+            router.replace("/hostel-manager");
+          } else if (email.includes("mess")) {
+            router.replace("/mess-manager");
+          } else if (email.includes("fee")) {
+            router.replace("/fee-manager");
+          } else if (email.includes("notice")) {
+            router.replace("/notice-manager");
           } else {
             router.replace("/(tab)/home");
           }
