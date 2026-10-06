@@ -16,14 +16,17 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
 import { auth, db } from "../firebase/config";
+import { sendStudentNotification } from "../services/notificationService";
 import { useAppTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -253,7 +256,7 @@ export default function FeesScreen() {
   const nextDueDate =
     feeItems.find((i) => i.status === "Pending")?.dueDate || "30 Oct 2026";
 
-  // Simulate Fee Payment / Toggle Status
+  // Fee Payment Handler (Firebase Firestore Live Sync)
   const handlePayFeeItem = async (item: FeeItem) => {
     const user = auth.currentUser;
     if (!user) return;
@@ -273,19 +276,103 @@ export default function FeesScreen() {
           onPress: async () => {
             try {
               setPayingItemId(item.id);
-              try {
-                await updateDoc(doc(db, "users", user.uid, "fees_breakdown", item.id), {
-                  status: "Paid",
-                  paidAt: serverTimestamp(),
-                });
-              } catch (_) {
-                await updateDoc(doc(db, "fees", item.id), {
+              const txnId = `TXN-CAMP-${Date.now().toString().slice(-6)}`;
+
+              // 1. Record/Update item in student's fees_breakdown with merge: true (never fails)
+              await setDoc(
+                doc(db, "users", user.uid, "fees_breakdown", item.id),
+                {
+                  id: item.id,
+                  title: item.title,
+                  amount: item.amount,
+                  category: item.category || "General",
+                  dueDate: item.dueDate || "Paid",
                   status: "Paid",
                   isPaid: true,
+                  transactionId: txnId,
+                  paidAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                },
+                { merge: true }
+              );
+
+              // 2. Also update global fee record if it exists
+              try {
+                await setDoc(
+                  doc(db, "fees", item.id),
+                  {
+                    status: "Paid",
+                    isPaid: true,
+                    lastPaidBy: user.uid,
+                    lastPaidStudentEmail: user.email || "",
+                    updatedAt: serverTimestamp(),
+                  },
+                  { merge: true }
+                );
+              } catch (_) {}
+
+              // 3. Record official payment transaction in payments collection
+              await addDoc(collection(db, "payments"), {
+                studentId: user.uid,
+                studentEmail: user.email || "",
+                feeId: item.id,
+                title: item.title,
+                amount: item.amount,
+                category: item.category || "Tuition",
+                status: "Success",
+                paymentMethod: "Online UPI / Netbanking",
+                transactionId: txnId,
+                paidAt: serverTimestamp(),
+                createdAt: serverTimestamp(),
+              });
+
+              // 4. Update student's fee totals in users/{uid}
+              const userRef = doc(db, "users", user.uid);
+              const userSnap = await getDoc(userRef);
+              if (userSnap.exists()) {
+                const currentData = userSnap.data();
+                const currentPaid = Number(currentData.paidFees || 0);
+                const currentTotal = Number(currentData.totalFees || totalAmount || item.amount);
+                const newPaid = currentPaid + item.amount;
+                const newRemaining = Math.max(0, currentTotal - newPaid);
+                const newStatus = newRemaining === 0 ? "Paid" : "Partial";
+                await updateDoc(userRef, {
+                  paidFees: newPaid,
+                  remainingFees: newRemaining,
+                  feeStatus: newStatus,
+                  lastPaymentDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
                   updatedAt: serverTimestamp(),
                 });
               }
-              Alert.alert(t("success", "Payment Successful"), `₹ ${item.amount.toLocaleString()} paid for ${item.title}.`);
+
+              // 5. Send instant student notification with receipt details
+              await sendStudentNotification({
+                studentId: user.uid,
+                studentEmail: user.email || "",
+                title: "💳 Payment Successful",
+                message: `Payment of ₹${item.amount.toLocaleString()} for "${item.title}" was recorded successfully. Txn ID: ${txnId}`,
+                type: "fee",
+                actionRoute: "/fees",
+                metadata: {
+                  feeId: item.id,
+                  amount: item.amount,
+                  transactionId: txnId,
+                },
+              });
+
+              // 6. Log to activities collection
+              await addDoc(collection(db, "activities"), {
+                title: `Fee Paid: ₹${item.amount.toLocaleString()} for ${item.title} by ${user.email || "Student"}`,
+                time: "Just now",
+                user: user.email || "Student",
+                type: "fees",
+                createdAt: serverTimestamp(),
+              });
+
+              Alert.alert(
+                t("success", "Payment Successful"),
+                `✓ ₹ ${item.amount.toLocaleString()} paid for ${item.title}.\n✓ Transaction ID: ${txnId}\n✓ Receipt updated in your fee profile.`
+              );
             } catch (err: any) {
               Alert.alert(t("error", "Error"), err?.message || "Payment update failed.");
             } finally {

@@ -37,6 +37,7 @@ import { useAppTheme } from "../../context/ThemeContext";
 import AdminThemeToggle from "../../components/admin/AdminThemeToggle";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import AdminTopBar from "../../components/admin/AdminTopBar";
+import { sendBroadcastNotification } from "../../services/notificationService";
 
 const CATEGORIES = ["All", "Academic", "Examination", "Important", "General"];
 
@@ -299,11 +300,29 @@ export default function AdminNoticesScreen() {
 
       if (editingNotice) {
         await updateDoc(doc(db, "notices", editingNotice.id), payload);
+        await sendBroadcastNotification({
+          title: `Updated: ${formTitle.trim()}`,
+          body: formMessage.trim(),
+          type: "notice",
+          category: formCategory,
+          target: formTargetHostel ? "Hostel Students" : "All Students",
+          targetHostel: formTargetHostel || null,
+          senderName: formTeacherName.trim() || "Administration",
+        });
         Alert.alert("Notice Updated", "Notice changes have been broadcast to all students.");
       } else {
         await addDoc(collection(db, "notices"), {
           ...payload,
           createdAt: serverTimestamp(),
+        });
+        await sendBroadcastNotification({
+          title: formTitle.trim(),
+          body: formMessage.trim(),
+          type: "notice",
+          category: formCategory,
+          target: formTargetHostel ? "Hostel Students" : "All Students",
+          targetHostel: formTargetHostel || null,
+          senderName: formTeacherName.trim() || "Administration",
         });
         Alert.alert("Notice Published", "New notice has been published for students.");
       }

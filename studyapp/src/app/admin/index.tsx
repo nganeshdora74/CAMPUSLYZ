@@ -132,11 +132,7 @@ export default function AdminDashboard() {
         const students = snap.docs.filter((d) => {
           const s = d.data();
           const role = (s.role || "").toLowerCase();
-          return (
-            role === "student" ||
-            (!role && (s.rollNo || s.degree)) ||
-            (role !== "admin" && role !== "teacher" && (s.rollNo || s.fullName || s.name))
-          );
+          return role === "student";
         });
         setStudentCount(students.length);
 

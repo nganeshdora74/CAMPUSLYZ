@@ -11,39 +11,40 @@ export default function SplashScreen() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const rawRole = (userDoc.exists() ? userDoc.data()?.role : "") || "";
+          const userSnap = await getDoc(doc(db, "users", user.uid));
+          const rawRole = (userSnap.exists() ? userSnap.data()?.role : "") || "";
           const role = rawRole.toLowerCase();
           const email = (user.email || "").toLowerCase();
 
           if (role === "admin" || email.includes("admin")) {
-            router.replace("/admin");
+            router.replace("/admin" as any);
           } else if (role === "teacher" || role === "faculty" || email.includes("teacher")) {
-            router.replace("/teacher");
+            router.replace("/teacher" as any);
           } else if (role === "hostel_manager" || role === "hostel" || email.includes("hostel")) {
-            router.replace("/hostel-manager");
+            router.replace("/hostel-manager" as any);
           } else if (role === "mess_manager" || role === "mess" || email.includes("mess")) {
-            router.replace("/mess-manager");
+            router.replace("/mess-manager" as any);
           } else if (role === "fee_manager" || role === "fees" || email.includes("fee")) {
-            router.replace("/fee-manager");
+            router.replace("/fee-manager" as any);
           } else if (role === "notice_manager" || role === "notices" || email.includes("notice")) {
-            router.replace("/notice-manager");
+            router.replace("/notice-manager" as any);
           } else {
             router.replace("/(tab)/home");
           }
         } catch (e) {
           const email = (user.email || "").toLowerCase();
           if (email.includes("admin")) {
-            router.replace("/admin");
+            router.replace("/admin" as any);
           } else if (email.includes("teacher")) {
-            router.replace("/teacher");
+            router.replace("/teacher" as any);
           } else if (email.includes("hostel")) {
-            router.replace("/hostel-manager");
+            router.replace("/hostel-manager" as any);
           } else if (email.includes("mess")) {
-            router.replace("/mess-manager");
+            router.replace("/mess-manager" as any);
           } else if (email.includes("fee")) {
-            router.replace("/fee-manager");
+            router.replace("/fee-manager" as any);
           } else if (email.includes("notice")) {
-            router.replace("/notice-manager");
+            router.replace("/notice-manager" as any);
           } else {
             router.replace("/(tab)/home");
           }

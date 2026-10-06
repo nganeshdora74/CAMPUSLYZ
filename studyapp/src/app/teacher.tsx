@@ -125,7 +125,7 @@ export default function TeacherDashboard() {
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>Dr. S. Reddy</Text>
-                <Text style={styles.userRole}>Faculty • CSE</Text>
+                <Text style={styles.userRole}>reddy.teacher@gmail.com</Text>
               </View>
             </View>
           </View>

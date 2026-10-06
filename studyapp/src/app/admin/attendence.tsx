@@ -338,8 +338,8 @@ export default function AdminAttendanceScreen() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // Student Records Data State
-  const [students, setStudents] = useState<StudentAttendanceRow[]>(SEED_STUDENTS);
+  // Student Records Data State (Strictly real student accounts only)
+  const [students, setStudents] = useState<StudentAttendanceRow[]>([]);
   const [savingAttendance, setSavingAttendance] = useState(false);
 
   // Status Selector Modal State
@@ -558,73 +558,35 @@ export default function AdminAttendanceScreen() {
         const connectedUids = new Set(connectedStudentsList.map((c) => c.studentUid));
         const connectedRolls = new Set(connectedStudentsList.map((c) => (c.rollNo || "").toUpperCase()));
 
-        // Merge seeded list with live Firestore data
-        const merged: StudentAttendanceRow[] = SEED_STUDENTS.map((seed) => {
-          const matchedUser: any = studentDocs.find(
-            (u: any) =>
-              (u.rollNo && u.rollNo.toUpperCase() === seed.rollNo.toUpperCase()) ||
-              (u.fullName && u.fullName.toLowerCase() === seed.studentName.toLowerCase())
-          );
-
+        // Map ONLY real registered students from users collection
+        const merged: StudentAttendanceRow[] = studentDocs.map((u: any, idx: number) => {
           const isConn =
-            connectedRolls.has(seed.rollNo.toUpperCase()) ||
-            (matchedUser && connectedUids.has(matchedUser.uid)) ||
-            (matchedUser && matchedUser.connectedTeacherIds && matchedUser.connectedTeacherIds.includes("TEACH-CSE-101")) ||
-            seed.num <= 5; // Default top 5 connected
+            connectedUids.has(u.uid) ||
+            connectedRolls.has((u.rollNo || "").toUpperCase()) ||
+            (u.connectedTeacherIds && u.connectedTeacherIds.includes("TEACH-CSE-101")) ||
+            true;
 
-          const isBlocked = !!matchedUser?.isBlocked || matchedUser?.status === "blocked";
-          const activeStatus = matchedUser?.lastAttendanceStatus || seed.status;
-          const activeRemarks = matchedUser?.lastAttendanceRemarks || seed.remarks;
-          const mStats = computeStudentMonthStats(seed.num, activeStatus as any, activeRemarks, 24);
+          const isBlocked = !!u.isBlocked || u.status === "blocked";
+          const activeStatus = (u.lastAttendanceStatus as any) || "Present";
+          const activeRemarks = u.lastAttendanceRemarks || "-";
+          const mStats = computeStudentMonthStats(idx + 1, activeStatus, activeRemarks, 24);
 
           return {
-            ...seed,
-            studentUid: matchedUser ? matchedUser.uid : seed.studentUid || `demo-${seed.rollNo.toLowerCase()}`,
-            isConnected: !!isConn,
+            id: u.uid,
+            num: idx + 1,
+            rollNo: u.rollNo || `23CSE00${idx + 1}`,
+            studentName: u.fullName || u.name || "Student",
             status: activeStatus,
             remarks: activeRemarks,
+            studentUid: u.uid,
+            isConnected: !!isConn,
+            department: u.department || "CSE",
+            section: u.section || "A",
             isBlocked,
             monthPresentCount: mStats.monthPresentCount,
             monthAbsentCount: mStats.monthAbsentCount,
             monthLateCount: mStats.monthLateCount,
           };
-        });
-
-        // Also add any freshly connected Firestore students not in SEED_STUDENTS
-        studentDocs.forEach((u: any, uIdx) => {
-          const alreadyExists = merged.some(
-            (m) =>
-              m.studentUid === u.uid ||
-              (u.rollNo && m.rollNo.toUpperCase() === u.rollNo.toUpperCase())
-          );
-
-          if (!alreadyExists) {
-            const isConn =
-              connectedUids.has(u.uid) ||
-              (u.connectedTeacherIds && u.connectedTeacherIds.includes("TEACH-CSE-101"));
-
-            const isBlocked = !!u.isBlocked || u.status === "blocked";
-            const freshStatus = (u.lastAttendanceStatus as any) || "Present";
-            const freshRemarks = u.lastAttendanceRemarks || "-";
-            const mStats = computeStudentMonthStats(uIdx + 1, freshStatus, freshRemarks, 24);
-
-            merged.unshift({
-              id: u.uid,
-              num: 0,
-              rollNo: u.rollNo || `CSE10${uIdx + 1}`,
-              studentName: u.fullName || u.name || "Student",
-              status: freshStatus,
-              remarks: freshRemarks,
-              studentUid: u.uid,
-              isConnected: !!isConn,
-              department: u.department || "CSE",
-              section: u.section || "A",
-              isBlocked,
-              monthPresentCount: mStats.monthPresentCount,
-              monthAbsentCount: mStats.monthAbsentCount,
-              monthLateCount: mStats.monthLateCount,
-            });
-          }
         });
 
         // Filter out any student IDs marked as deleted/removed

@@ -113,7 +113,7 @@ export default function HostelManagerDashboard() {
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>Rahul Sharma</Text>
-                <Text style={styles.userRole}>Hostel Manager</Text>
+                <Text style={styles.userRole}>rahul.hostel@gmail.com</Text>
               </View>
             </View>
           </View>

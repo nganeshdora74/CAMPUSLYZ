@@ -156,12 +156,8 @@ export default function AdminStudentsScreen() {
         snapshot.forEach((item) => {
           const student = item.data();
           const role = (student.role || "").toLowerCase();
-          // Include all student accounts (or accounts with roll numbers/degree)
-          if (
-            role === "student" ||
-            (!role && (student.rollNo || student.degree)) ||
-            (role !== "admin" && role !== "teacher" && (student.rollNo || student.fullName || student.name))
-          ) {
+          // Strictly real registered student accounts only
+          if (role === "student") {
             const isBlocked = !!student.isBlocked || student.status === "blocked";
             data.push({
               id: item.id,

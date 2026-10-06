@@ -42,7 +42,8 @@ export interface AskAIOptions {
 function decodeSafeKey(b64: string): string {
   try {
     if (typeof atob === "function") return atob(b64);
-    if (typeof Buffer !== "undefined") return Buffer.from(b64, "base64").toString("utf8");
+    const globalBuffer = (globalThis as any).Buffer;
+    if (typeof globalBuffer !== "undefined") return globalBuffer.from(b64, "base64").toString("utf8");
   } catch {}
   return "";
 }

@@ -44,6 +44,7 @@ import {
   shareOrDownloadPdf,
   uploadCertificateFile,
 } from "../../services/certificatePdfService";
+import { sendStudentNotification } from "../../services/notificationService";
 
 const PRESET_PHOTOS = [
   {
@@ -99,6 +100,7 @@ export interface CertificateItem {
   studentId?: string;
   studentName: string;
   studentRollNo: string;
+  studentEmail?: string;
   title: string;
   subject: string;
   grade: string;
@@ -202,7 +204,8 @@ export default function AdminCertificateScreen() {
         snapshot.docs.forEach((docSnap) => {
           const d = docSnap.data();
           const role = (d.role || "").toLowerCase();
-          if (role === "admin" || role === "teacher") return;
+          // Filter to only real registered students
+          if (role && role !== "student") return;
 
           loaded.push({
             id: docSnap.id,
@@ -239,6 +242,7 @@ export default function AdminCertificateScreen() {
             studentId: data.studentId || "",
             studentName: data.studentName || "Student",
             studentRollNo: data.studentRollNo || "23CSE001",
+            studentEmail: data.studentEmail || "",
             title: data.title || "Academic Certificate",
             subject: data.subject || "Course Mastery",
             grade: data.grade || "Grade A+",
@@ -476,11 +480,13 @@ export default function AdminCertificateScreen() {
         console.warn("Auto-PDF generation fallback:", pdfErr?.message);
       }
 
+      const targetStudentEmail = req.studentEmail || matched?.email || "";
       const docRef = await addDoc(collection(db, "certificates"), {
         studentId: req.studentId || matched?.id || "student",
         studentName: resolvedName,
         studentRollNo: resolvedRoll,
         studentDepartment: resolvedDept,
+        studentEmail: targetStudentEmail,
         title: req.certificateType || "Official Academic Certificate",
         subject: req.purpose || "Official Credential",
         grade: "Verified & Approved",
@@ -515,6 +521,21 @@ export default function AdminCertificateScreen() {
         user: "Admin",
         type: "certificate",
         createdAt: serverTimestamp(),
+      });
+
+      // Send live notification to the student
+      await sendStudentNotification({
+        studentId: req.studentId || matched?.id || "",
+        studentEmail: targetStudentEmail,
+        title: `🎓 Certificate Issued: ${req.certificateType || "Academic Certificate"}`,
+        message: `Your ${req.certificateType} (ID: ${credId}) has been issued with accredited PDF credential. View or download it now!`,
+        type: "certificate",
+        actionRoute: "/certificate",
+        metadata: {
+          certificateId: docRef.id,
+          credentialId: credId,
+          pdfUrl: finalPdfUrl,
+        },
       });
 
       Alert.alert(
@@ -554,6 +575,15 @@ export default function AdminCertificateScreen() {
         user: "Admin",
         type: "certificate",
         createdAt: serverTimestamp(),
+      });
+
+      await sendStudentNotification({
+        studentId: targetRequestForDecline.studentId || "",
+        studentEmail: targetRequestForDecline.studentEmail || "",
+        title: `Certificate Request Update`,
+        message: `Your request for ${targetRequestForDecline.certificateType} was reviewed: ${reason}`,
+        type: "certificate",
+        actionRoute: "/certificate",
       });
 
       setDeclineModalVisible(false);
@@ -767,6 +797,24 @@ export default function AdminCertificateScreen() {
           createdAt: serverTimestamp(),
         });
 
+        // Notify student immediately of certificate update
+        const targetStudent = students.find(
+          (s) => s.id === editingCert.studentId || s.rollNo === editingCert.studentRollNo
+        );
+        await sendStudentNotification({
+          studentId: editingCert.studentId || targetStudent?.id || "",
+          studentEmail: editingCert.studentEmail || targetStudent?.email || "",
+          title: `🎓 Certificate Updated: ${certTitle.trim()}`,
+          message: `Your certificate "${certTitle.trim()}" has been updated with new files and details. View or download the latest version in your app!`,
+          type: "certificate",
+          actionRoute: "/certificate",
+          metadata: {
+            certificateId: editingCert.id,
+            pdfUrl: finalPdfUrl,
+            photoUrl: finalPhotoUrl,
+          },
+        });
+
         setIssueModalVisible(false);
         setEditingCert(null);
         setPhotoUrl("");
@@ -782,11 +830,17 @@ export default function AdminCertificateScreen() {
       } else {
         // ISSUE NEW CERTIFICATE
         const studentIdToUse = targetStudentId || (selectedStudent ? selectedStudent.id : "student");
+        const studentEmailToUse =
+          selectedStudent?.email ||
+          students.find((s) => s.id === studentIdToUse || s.rollNo === certStudentRoll.trim())?.email ||
+          "";
+
         const docRef = await addDoc(collection(db, "certificates"), {
           studentId: studentIdToUse,
           studentName: certStudentName.trim() || "Student",
           studentRollNo: certStudentRoll.trim() || "23CSE001",
           studentDepartment: certDepartment || selectedStudent?.department || "CSE",
+          studentEmail: studentEmailToUse,
           title: certTitle.trim(),
           subject: certSubject.trim(),
           grade: certGrade.trim() || "Grade A+",
@@ -828,6 +882,22 @@ export default function AdminCertificateScreen() {
           user: "Admin",
           type: "certificate",
           createdAt: serverTimestamp(),
+        });
+
+        // Notify student immediately of newly issued certificate
+        await sendStudentNotification({
+          studentId: studentIdToUse,
+          studentEmail: studentEmailToUse,
+          title: `🎓 Certificate Conferred: ${certTitle.trim()}`,
+          message: `Congratulations! Official certificate "${certTitle.trim()}" (ID: ${credId}) has been issued. Check it now in your certificates tab!`,
+          type: "certificate",
+          actionRoute: "/certificate",
+          metadata: {
+            certificateId: docRef.id,
+            credentialId: credId,
+            pdfUrl: finalPdfUrl,
+            photoUrl: finalPhotoUrl,
+          },
         });
 
         setIssueModalVisible(false);

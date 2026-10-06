@@ -37,6 +37,7 @@ export type Certificate = {
   studentId?: string;
   studentName?: string;
   studentRollNo?: string;
+  studentEmail?: string;
   title: string;
   subject?: string;
   grade?: string;
@@ -96,6 +97,7 @@ export default function CertificateScreen() {
               studentId: data.studentId || "",
               studentName: data.studentName || "Student",
               studentRollNo: data.studentRollNo || "23CSE001",
+              studentEmail: data.studentEmail || "",
               title: data.title || "Academic Certificate",
               subject: data.subject || "Academic Subject",
               grade: data.grade || "Grade A+",
@@ -152,6 +154,7 @@ export default function CertificateScreen() {
     if (!user) return true;
     return (
       c.studentId === user.uid ||
+      (user.email && c.studentEmail && c.studentEmail.toLowerCase() === user.email.toLowerCase()) ||
       (studentProfile?.rollNo && c.studentRollNo === studentProfile.rollNo) ||
       (user.email && c.studentName?.toLowerCase() === (studentProfile?.fullName || user.displayName || "").toLowerCase()) ||
       c.studentId === "student"

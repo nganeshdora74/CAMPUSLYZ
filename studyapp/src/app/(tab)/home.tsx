@@ -27,6 +27,7 @@ import { useAppTheme } from "../../context/ThemeContext";
 import { useLanguage } from "../../context/LanguageContext";
 import LanguageToggle from "../../components/LanguageToggle";
 import OfflineBanner from "../../components/OfflineBanner";
+import NotificationBellModal from "../../components/NotificationBellModal";
 
 type QuickAccessItem = {
   id: string;
@@ -532,6 +533,8 @@ export default function HomeScreen() {
             <Ionicons name="sparkles" size={13} color={colors.primary} />
             <Text style={[styles.headerAiBtnText, { color: colors.primary }]}>AI</Text>
           </TouchableOpacity>
+
+          <NotificationBellModal iconColor={colors.text} badgeBgColor="#EF4444" />
 
           <TouchableOpacity
             style={styles.profileButton}

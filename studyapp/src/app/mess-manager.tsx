@@ -133,7 +133,7 @@ export default function MessManagerDashboard() {
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>Priya Nair</Text>
-                <Text style={styles.userRole}>Mess Manager</Text>
+                <Text style={styles.userRole}>priya.mess@gmail.com</Text>
               </View>
             </View>
           </View>

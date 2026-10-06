@@ -118,7 +118,10 @@ export default function LoginScreen() {
                 ? "Vikram Singh"
                 : finalRole === "notice_manager"
                 ? "Anita Verma"
-                : "Campusly Student"),
+                : "Ganesh Dora"),
+            rollNo: finalRole === "student" ? "23CSE001" : undefined,
+            department: finalRole === "student" ? "CSE" : undefined,
+            semester: finalRole === "student" ? "4" : undefined,
             role: finalRole,
             isTeacher: finalRole === "teacher",
             createdAt: new Date().toISOString(),
@@ -148,17 +151,17 @@ export default function LoginScreen() {
     }
 
     if (finalRole === "admin") {
-      router.replace("/admin");
+      router.replace("/admin" as any);
     } else if (finalRole === "teacher") {
-      router.replace("/teacher");
+      router.replace("/teacher" as any);
     } else if (finalRole === "hostel_manager") {
-      router.replace("/hostel-manager");
+      router.replace("/hostel-manager" as any);
     } else if (finalRole === "mess_manager") {
-      router.replace("/mess-manager");
+      router.replace("/mess-manager" as any);
     } else if (finalRole === "fee_manager") {
-      router.replace("/fee-manager");
+      router.replace("/fee-manager" as any);
     } else if (finalRole === "notice_manager") {
-      router.replace("/notice-manager");
+      router.replace("/notice-manager" as any);
     } else {
       router.replace("/(tab)/home");
     }
@@ -220,18 +223,18 @@ export default function LoginScreen() {
 
     const testEmail =
       roleType === "admin"
-        ? "tdebuggers0.admin@gmail.com"
+        ? "admin.admin@gmail.com"
         : roleType === "teacher"
-        ? "prof.reddy.teacher@campusly.edu"
+        ? "reddy.teacher@gmail.com"
         : roleType === "hostel_manager"
-        ? "rahul.hostel@campusly.edu"
+        ? "rahul.hostel@gmail.com"
         : roleType === "mess_manager"
-        ? "priya.mess@campusly.edu"
+        ? "priya.mess@gmail.com"
         : roleType === "fee_manager"
-        ? "vikram.fee@campusly.edu"
+        ? "vikram.fee@gmail.com"
         : roleType === "notice_manager"
-        ? "anita.notice@campusly.edu"
-        : "demo.student@campusly.edu";
+        ? "anita.notice@gmail.com"
+        : "ganesh.student@gmail.com";
 
     const testPassword =
       roleType === "admin"
@@ -314,7 +317,7 @@ export default function LoginScreen() {
               ? "Vikram Singh"
               : roleType === "notice_manager"
               ? "Anita Verma"
-              : "Demo Student";
+              : "Ganesh Dora";
 
           await setDoc(
             userRef,
@@ -322,6 +325,9 @@ export default function LoginScreen() {
               uid: user.uid,
               email: testEmail,
               fullName,
+              rollNo: roleType === "student" ? "23CSE001" : undefined,
+              department: roleType === "student" ? "CSE" : undefined,
+              semester: roleType === "student" ? "4" : undefined,
               role: roleType,
               isTeacher: roleType === "teacher",
               teacherId: roleType === "teacher" ? "TEACH-CSE-101" : undefined,
@@ -336,17 +342,17 @@ export default function LoginScreen() {
 
         // 4. Navigate directly
         if (roleType === "admin") {
-          router.replace("/admin");
+          router.replace("/admin" as any);
         } else if (roleType === "teacher") {
-          router.replace("/teacher");
+          router.replace("/teacher" as any);
         } else if (roleType === "hostel_manager") {
-          router.replace("/hostel-manager");
+          router.replace("/hostel-manager" as any);
         } else if (roleType === "mess_manager") {
-          router.replace("/mess-manager");
+          router.replace("/mess-manager" as any);
         } else if (roleType === "fee_manager") {
-          router.replace("/fee-manager");
+          router.replace("/fee-manager" as any);
         } else if (roleType === "notice_manager") {
-          router.replace("/notice-manager");
+          router.replace("/notice-manager" as any);
         } else {
           router.replace("/(tab)/home");
         }
@@ -454,7 +460,7 @@ export default function LoginScreen() {
           <Text style={styles.label}>Email Address</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. name@example.com"
+            placeholder="e.g. ganesh.student@gmail.com"
             placeholderTextColor="#94A3B8"
             value={email}
             onChangeText={setEmail}

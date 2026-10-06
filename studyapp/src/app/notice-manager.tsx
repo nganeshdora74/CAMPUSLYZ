@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Platform,
@@ -14,6 +15,18 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+} from "firebase/firestore";
+import { auth, db } from "../firebase/config";
+import { sendBroadcastNotification } from "../services/notificationService";
 import RoleSwitcherModal from "../components/RoleSwitcherModal";
 
 export default function NoticeManagerDashboard() {
@@ -24,55 +37,129 @@ export default function NoticeManagerDashboard() {
   const [activeTab, setActiveTab] = useState<"home" | "create" | "manage" | "scheduled" | "reports">("home");
   const [createNoticeModal, setCreateNoticeModal] = useState(false);
 
-  // New notice form
+  // Live Notices State
+  const [notices, setNotices] = useState<any[]>([]);
+  const [loadingNotices, setLoadingNotices] = useState(true);
+  const [publishing, setPublishing] = useState(false);
+
+  // New notice form - default target is "Hostel Students"
   const [noticeTitle, setNoticeTitle] = useState("");
-  const [noticeTarget, setNoticeTarget] = useState("All Students");
+  const [noticeTarget, setNoticeTarget] = useState<"Hostel Students" | "All Students">("Hostel Students");
   const [noticeBody, setNoticeBody] = useState("");
 
-  const recentNotices = [
-    {
-      id: "n-1",
-      title: "Exam Schedule Released",
-      meta: "12 Oct 2025 • All Students",
-      status: "Published",
-      badgeColor: "#15803D",
-      badgeBg: "#DCFCE7",
-    },
-    {
-      id: "n-2",
-      title: "Hostel Maintenance",
-      meta: "11 Oct 2025 • Hostel Students",
-      status: "Published",
-      badgeColor: "#15803D",
-      badgeBg: "#DCFCE7",
-    },
-    {
-      id: "n-3",
-      title: "Cultural Fest Registration",
-      meta: "10 Oct 2025 • All Students",
-      status: "Scheduled",
-      badgeColor: "#B45309",
-      badgeBg: "#FEF3C7",
-    },
-    {
-      id: "n-4",
-      title: "Bus Service Update",
-      meta: "09 Oct 2025 • All Students",
-      status: "Published",
-      badgeColor: "#15803D",
-      badgeBg: "#DCFCE7",
-    },
-  ];
+  // Live listener on Firestore notices collection
+  useEffect(() => {
+    const q = query(collection(db, "notices"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setNotices(loaded);
+        setLoadingNotices(false);
+      },
+      (err) => {
+        console.warn("Notices listener error:", err);
+        setNotices([]);
+        setLoadingNotices(false);
+      }
+    );
+    return () => unsub();
+  }, []);
 
-  const handlePublishNotice = () => {
+  const totalNoticesCount = notices.length;
+  const hostelNoticesCount = notices.filter(
+    (n) =>
+      n.target === "Hostel Students" ||
+      n.target === "Hostel Only" ||
+      n.isHostelOnly ||
+      n.isHostelNotice
+  ).length;
+  const publishedNoticesCount = notices.filter((n) => n.status !== "Draft").length;
+
+  const handlePublishNotice = async () => {
     if (!noticeTitle.trim()) {
       Alert.alert("Missing Title", "Please provide a notice title.");
       return;
     }
-    setCreateNoticeModal(false);
-    setNoticeTitle("");
-    setNoticeBody("");
-    Alert.alert("Notice Published", "Your announcement is now live across the campus portal.");
+    if (!noticeBody.trim()) {
+      Alert.alert("Missing Content", "Please enter notice description or body.");
+      return;
+    }
+
+    try {
+      setPublishing(true);
+      const isHostel = noticeTarget === "Hostel Students";
+
+      // 1. Add to notices collection
+      const docRef = await addDoc(collection(db, "notices"), {
+        title: noticeTitle.trim(),
+        description: noticeBody.trim(),
+        body: noticeBody.trim(),
+        content: noticeBody.trim(),
+        target: noticeTarget,
+        audience: noticeTarget,
+        isHostelOnly: isHostel,
+        isHostelNotice: isHostel,
+        publishedBy: "Anita Verma (Notice Manager)",
+        publishedByRole: "notice_manager",
+        date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        status: "Published",
+        createdAt: serverTimestamp(),
+      });
+
+      // 2. Dispatch Live Broadcast Notification (reaches hostel students or all students)
+      await sendBroadcastNotification({
+        title: `📢 ${noticeTitle.trim()}`,
+        message: noticeBody.trim(),
+        target: isHostel ? "Hostel Students" : "All Students",
+        type: "notice",
+        actionRoute: "/(tab)/notices",
+        metadata: {
+          noticeId: docRef.id,
+          target: noticeTarget,
+          isHostelOnly: isHostel,
+        },
+      });
+
+      // 3. Log activity
+      await addDoc(collection(db, "activities"), {
+        title: `Notice Published: "${noticeTitle.trim()}" for ${noticeTarget}`,
+        time: "Just now",
+        user: "Notice Manager",
+        type: "notice",
+        createdAt: serverTimestamp(),
+      });
+
+      setCreateNoticeModal(false);
+      setNoticeTitle("");
+      setNoticeBody("");
+      Alert.alert(
+        "Notice Broadcasted! 📢",
+        `Your announcement "${noticeTitle.trim()}" has been published and notifications were dispatched to ${noticeTarget}.`
+      );
+    } catch (e: any) {
+      Alert.alert("Publish Failed", e?.message || "Could not publish notice.");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleDeleteNotice = async (noticeId: string, title: string) => {
+    Alert.alert("Delete Notice", `Are you sure you want to delete "${title}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "notices", noticeId));
+            Alert.alert("Deleted", "Notice removed from campus portal.");
+          } catch (e: any) {
+            Alert.alert("Error", e?.message || "Could not delete notice.");
+          }
+        },
+      },
+    ]);
   };
 
   const navItems = [
@@ -137,7 +224,7 @@ export default function NoticeManagerDashboard() {
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>Anita Verma</Text>
-                <Text style={styles.userRole}>Notice Manager</Text>
+                <Text style={styles.userRole}>anita.notice@gmail.com</Text>
               </View>
             </View>
           </View>
@@ -201,34 +288,34 @@ export default function NoticeManagerDashboard() {
                 onPress={() => router.push("/admin/notices")}
               >
                 <Text style={[styles.statLabel, { color: "#BE185D" }]}>Total Notices</Text>
-                <Text style={[styles.statValue, { color: "#9D174D" }]}>24</Text>
+                <Text style={[styles.statValue, { color: "#9D174D" }]}>{totalNoticesCount}</Text>
               </TouchableOpacity>
 
-              {/* Published */}
+              {/* Hostel Notices */}
               <TouchableOpacity
                 style={[styles.statCard, { backgroundColor: "#DCFCE7", borderColor: "#BBF7D0" }]}
                 onPress={() => router.push("/admin/notices")}
               >
-                <Text style={[styles.statLabel, { color: "#15803D" }]}>Published</Text>
-                <Text style={[styles.statValue, { color: "#14532D" }]}>18</Text>
+                <Text style={[styles.statLabel, { color: "#15803D" }]}>Hostel Notices</Text>
+                <Text style={[styles.statValue, { color: "#14532D" }]}>{hostelNoticesCount}</Text>
               </TouchableOpacity>
 
-              {/* Scheduled */}
+              {/* Published */}
               <TouchableOpacity
                 style={[styles.statCard, { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }]}
-                onPress={() => Alert.alert("Scheduled Notices", "4 notices queued for broadcast.")}
+                onPress={() => router.push("/admin/notices")}
               >
-                <Text style={[styles.statLabel, { color: "#B45309" }]}>Scheduled</Text>
-                <Text style={[styles.statValue, { color: "#78350F" }]}>4</Text>
+                <Text style={[styles.statLabel, { color: "#B45309" }]}>Published</Text>
+                <Text style={[styles.statValue, { color: "#78350F" }]}>{publishedNoticesCount}</Text>
               </TouchableOpacity>
 
-              {/* Drafts */}
+              {/* Active Audience */}
               <TouchableOpacity
                 style={[styles.statCard, { backgroundColor: "#F3E8FF", borderColor: "#E9D5FF" }]}
-                onPress={() => Alert.alert("Drafts", "2 drafts saved.")}
+                onPress={() => setCreateNoticeModal(true)}
               >
-                <Text style={[styles.statLabel, { color: "#7E22CE" }]}>Drafts</Text>
-                <Text style={[styles.statValue, { color: "#581C87" }]}>2</Text>
+                <Text style={[styles.statLabel, { color: "#7E22CE" }]}>Audience</Text>
+                <Text style={[styles.statValue, { color: "#581C87", fontSize: 15 }]}>Hostel & Campus</Text>
               </TouchableOpacity>
             </View>
 
@@ -242,24 +329,73 @@ export default function NoticeManagerDashboard() {
               </View>
 
               <View style={styles.noticesList}>
-                {recentNotices.map((n) => (
-                  <View key={n.id} style={styles.noticeRow}>
-                    <View style={styles.noticeIconCircle}>
-                      <Ionicons name="document-text-outline" size={20} color="#BE185D" />
-                    </View>
-
-                    <View style={styles.noticeInfo}>
-                      <Text style={styles.noticeTitle}>{n.title}</Text>
-                      <Text style={styles.noticeMeta}>{n.meta}</Text>
-                    </View>
-
-                    <View style={[styles.statusBadge, { backgroundColor: n.badgeBg }]}>
-                      <Text style={[styles.statusBadgeText, { color: n.badgeColor }]}>
-                        {n.status}
-                      </Text>
-                    </View>
+                {loadingNotices ? (
+                  <View style={{ padding: 20, alignItems: "center" }}>
+                    <ActivityIndicator size="small" color="#BE185D" />
                   </View>
-                ))}
+                ) : notices.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: "center" }}>
+                    <Text style={{ color: "#94A3B8", fontSize: 13 }}>
+                      No notices published yet. Tap "Create" to broadcast to Hostel Students.
+                    </Text>
+                  </View>
+                ) : (
+                  notices.slice(0, 8).map((n) => {
+                    const isHostel =
+                      n.target === "Hostel Students" ||
+                      n.target === "Hostel Only" ||
+                      n.isHostelOnly ||
+                      n.isHostelNotice;
+                    return (
+                      <View key={n.id} style={styles.noticeRow}>
+                        <View
+                          style={[
+                            styles.noticeIconCircle,
+                            isHostel && { backgroundColor: "#ECFDF5" },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isHostel ? "bed-outline" : "document-text-outline"}
+                            size={20}
+                            color={isHostel ? "#059669" : "#BE185D"}
+                          />
+                        </View>
+
+                        <View style={styles.noticeInfo}>
+                          <Text style={styles.noticeTitle}>{n.title}</Text>
+                          <Text style={styles.noticeMeta}>
+                            {n.date || "Recent"} • {n.target || n.audience || "Hostel Students"}
+                          </Text>
+                        </View>
+
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: isHostel ? "#DCFCE7" : "#FCE7F3" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                { color: isHostel ? "#15803D" : "#BE185D" },
+                              ]}
+                            >
+                              {n.status || "Published"}
+                            </Text>
+                          </View>
+
+                          <TouchableOpacity
+                            onPress={() => handleDeleteNotice(n.id, n.title)}
+                            style={{ padding: 4 }}
+                          >
+                            <Ionicons name="trash-outline" size={17} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
               </View>
             </View>
 
@@ -370,7 +506,7 @@ export default function NoticeManagerDashboard() {
 
             <View style={styles.targetRow}>
               <Text style={styles.targetLabel}>Target Audience:</Text>
-              {["All Students", "Hostel Only", "Faculty"].map((tgt) => (
+              {(["Hostel Students", "All Students"] as const).map((tgt) => (
                 <TouchableOpacity
                   key={tgt}
                   style={[
@@ -395,9 +531,16 @@ export default function NoticeManagerDashboard() {
               <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: "#BE185D" }]}
                 onPress={handlePublishNotice}
+                disabled={publishing}
               >
-                <Ionicons name="send" size={16} color="#FFFFFF" />
-                <Text style={styles.modalActionBtnText}>Broadcast Notice</Text>
+                {publishing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={16} color="#FFFFFF" />
+                    <Text style={styles.modalActionBtnText}>Broadcast Notice</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>

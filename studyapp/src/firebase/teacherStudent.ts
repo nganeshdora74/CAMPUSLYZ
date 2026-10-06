@@ -808,65 +808,10 @@ export function listenTeacherConnectedStudents(
 }
 
 /**
- * Seeds initial demo connected students for TEACH-CSE-101 if none exist.
+ * Seeding demo connected students is disabled so only real registered accounts appear.
  */
 export async function seedDefaultConnectedStudents(): Promise<void> {
-  try {
-    const colRef = collection(db, "teacherCodes", "TEACH-CSE-101", "students");
-    const snap = await getDocs(colRef);
-    if (snap.empty) {
-      const demoStudents = [
-        {
-          studentUid: "demo-st-1",
-          studentName: "Aarav Sharma",
-          studentEmail: "aarav.sharma@campusly.edu",
-          rollNo: "CSE001",
-          department: "CSE",
-          section: "A",
-        },
-        {
-          studentUid: "demo-st-2",
-          studentName: "Sneha Reddy",
-          studentEmail: "sneha.reddy@campusly.edu",
-          rollNo: "CSE002",
-          department: "CSE",
-          section: "A",
-        },
-        {
-          studentUid: "demo-st-3",
-          studentName: "Rohit Kumar",
-          studentEmail: "rohit.kumar@campusly.edu",
-          rollNo: "CSE003",
-          department: "CSE",
-          section: "A",
-        },
-        {
-          studentUid: "demo-st-4",
-          studentName: "Priya Singh",
-          studentEmail: "priya.singh@campusly.edu",
-          rollNo: "CSE004",
-          department: "CSE",
-          section: "A",
-        },
-        {
-          studentUid: "demo-st-5",
-          studentName: "Karan Mehta",
-          studentEmail: "karan.mehta@campusly.edu",
-          rollNo: "CSE005",
-          department: "CSE",
-          section: "A",
-        },
-      ];
-
-      for (const s of demoStudents) {
-        await setDoc(doc(colRef, s.studentUid), {
-          ...s,
-          connectedAt: serverTimestamp(),
-        });
-      }
-    }
-  } catch (err: any) {
-    console.warn("seedDefaultConnectedStudents warning:", err?.message);
-  }
+  // No mock students are seeded; strictly real student accounts in Firestore are utilized.
+  return;
 }
 
