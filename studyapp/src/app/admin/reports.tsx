@@ -22,6 +22,7 @@ import { useAdminTheme } from "../../hooks/useAdminTheme";
 import AdminThemeToggle from "../../components/admin/AdminThemeToggle";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import AdminTopBar from "../../components/admin/AdminTopBar";
+import { downloadReportCsv, downloadReportPdf } from "../../services/reportExportService";
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "home", route: "/admin" },
@@ -152,6 +153,85 @@ export default function AdminReportsScreen() {
     },
   ];
 
+  const [exporting, setExporting] = useState<"pdf" | "csv" | null>(null);
+
+  const handleExportPdf = async () => {
+    try {
+      setExporting("pdf");
+      const ok = await downloadReportPdf({
+        reportTitle: "Campus Complaint & Infrastructure Analytics",
+        reportSubtitle: "Campusly Central Administration Executive Summary",
+        generatedBy: "System Administrator",
+        kpis: [
+          { label: "Total Complaints", value: analytics.totalComplaints, subtext: "Recorded this term" },
+          { label: "Resolved Complaints", value: analytics.resolved, subtext: "Resolved tickets" },
+          { label: "Pending Complaints", value: analytics.pending, subtext: "Assigned to staff" },
+          { label: "Overdue Complaints", value: analytics.overdue, subtext: "Critical attention" },
+          { label: "Avg Resolution Time", value: analytics.avgResolutionTime, subtext: "SLA Met" },
+        ],
+        sections: [
+          {
+            title: "Top Recurring Issues",
+            headers: ["Rank", "Issue Category", "Report Count", "Distribution %"],
+            rows: analytics.recurring.map((r) => [r.rank, r.name, r.count, `${r.percent}%`]),
+          },
+          {
+            title: "Campus Hotspots",
+            headers: ["Location / Block", "Ticket Count", "Primary Issue", "Severity"],
+            rows: analytics.hotspots.map((h) => [h.block, h.count, h.primaryIssue, h.severity]),
+          },
+        ],
+      });
+      if (ok) {
+        Alert.alert("Report Exported", "Complaint analytics PDF downloaded successfully!");
+      }
+    } catch (e: any) {
+      Alert.alert("Export Error", e?.message || "Failed to download PDF report");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      setExporting("csv");
+      const ok = await downloadReportCsv(
+        {
+          reportTitle: "Campus Complaint & Infrastructure Analytics",
+          reportSubtitle: "Campusly Central Administration Executive Summary",
+          generatedBy: "System Administrator",
+          kpis: [
+            { label: "Total Complaints", value: analytics.totalComplaints },
+            { label: "Resolved Complaints", value: analytics.resolved },
+            { label: "Pending Complaints", value: analytics.pending },
+            { label: "Overdue Complaints", value: analytics.overdue },
+            { label: "Avg Resolution Time", value: analytics.avgResolutionTime },
+          ],
+          sections: [
+            {
+              title: "Top Recurring Issues",
+              headers: ["Rank", "Issue Category", "Report Count", "Distribution %"],
+              rows: analytics.recurring.map((r) => [r.rank, r.name, r.count, `${r.percent}%`]),
+            },
+            {
+              title: "Campus Hotspots",
+              headers: ["Location / Block", "Ticket Count", "Primary Issue", "Severity"],
+              rows: analytics.hotspots.map((h) => [h.block, h.count, h.primaryIssue, h.severity]),
+            },
+          ],
+        },
+        "Campusly_Complaint_Analytics"
+      );
+      if (ok) {
+        Alert.alert("Spreadsheet Exported", "Complaint analytics CSV downloaded successfully!");
+      }
+    } catch (e: any) {
+      Alert.alert("Export Error", e?.message || "Failed to download CSV report");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const handleLogout = () => {
     confirmLogout("Are you sure you want to sign out?");
   };
@@ -265,13 +345,37 @@ export default function AdminReportsScreen() {
                     </Text>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.aiAskBtn}
-                    onPress={() => router.push("/admin/ai-assistant")}
-                  >
-                    <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-                    <Text style={styles.aiAskBtnText}>Query AI Intelligence</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <TouchableOpacity
+                      style={[styles.aiAskBtn, { backgroundColor: "#DC2626" }]}
+                      onPress={handleExportPdf}
+                      disabled={exporting !== null}
+                    >
+                      <Ionicons name="document-text-outline" size={16} color="#FFFFFF" />
+                      <Text style={styles.aiAskBtnText}>
+                        {exporting === "pdf" ? "Exporting..." : "Export PDF"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.aiAskBtn, { backgroundColor: "#059669" }]}
+                      onPress={handleExportCsv}
+                      disabled={exporting !== null}
+                    >
+                      <Ionicons name="grid-outline" size={16} color="#FFFFFF" />
+                      <Text style={styles.aiAskBtnText}>
+                        {exporting === "csv" ? "Exporting..." : "Export CSV"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.aiAskBtn}
+                      onPress={() => router.push("/admin/ai-assistant")}
+                    >
+                      <Ionicons name="sparkles" size={16} color="#FFFFFF" />
+                      <Text style={styles.aiAskBtnText}>Query AI</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 {/* KPI Metrics Quad (Total: 87, Resolved: 64, Pending: 18, Overdue: 5) */}

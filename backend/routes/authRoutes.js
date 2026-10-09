@@ -5,6 +5,7 @@ const auth = require("../middleware/auth");
 
 router.post("/register", authController.register);
 router.post("/login", authController.login);
+router.post("/sync", authController.syncFirebaseUser);
 router.get("/me", auth, authController.getMe);
 
 module.exports = router;

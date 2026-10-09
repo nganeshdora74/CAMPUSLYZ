@@ -5,48 +5,77 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 import { auth, db } from "../firebase/config";
+import { getApiUrl } from "../api";
+import { parseNameAndRoleFromEmail } from "../utils/userEmailParser";
 
 export default function SplashScreen() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        const email = (user.email || "").toLowerCase();
+        const parsed = parseNameAndRoleFromEmail(email);
+
         try {
           const userSnap = await getDoc(doc(db, "users", user.uid));
-          const rawRole = (userSnap.exists() ? userSnap.data()?.role : "") || "";
-          const role = rawRole.toLowerCase();
-          const email = (user.email || "").toLowerCase();
+          const userData = userSnap.exists() ? userSnap.data() : null;
+          const rawRole = (userData?.role || "").toLowerCase();
+          const role = rawRole || parsed.role;
+          const name = userData?.fullName || user.displayName || parsed.fullName;
 
-          if (role === "admin" || email.includes("admin")) {
+          // Sync to MongoDB database
+          try {
+            const baseUrl = getApiUrl();
+            await fetch(`${baseUrl}/api/auth/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name,
+                email,
+                role,
+                firebaseUid: user.uid,
+              }),
+            });
+          } catch (_) {}
+
+          if (role === "admin") {
             router.replace("/admin" as any);
-          } else if (role === "teacher" || role === "faculty" || email.includes("teacher")) {
+          } else if (role === "teacher" || role === "faculty") {
             router.replace("/teacher" as any);
-          } else if (role === "hostel_manager" || role === "hostel" || email.includes("hostel")) {
+          } else if (role === "hostel_manager" || role === "hostel") {
             router.replace("/hostel-manager" as any);
-          } else if (role === "mess_manager" || role === "mess" || email.includes("mess")) {
+          } else if (role === "mess_manager" || role === "mess") {
             router.replace("/mess-manager" as any);
-          } else if (role === "fee_manager" || role === "fees" || email.includes("fee")) {
+          } else if (role === "fee_manager" || role === "fees" || role === "fee") {
             router.replace("/fee-manager" as any);
-          } else if (role === "notice_manager" || role === "notices" || email.includes("notice")) {
+          } else if (role === "notice_manager" || role === "notices" || role === "notice") {
             router.replace("/notice-manager" as any);
           } else {
-            router.replace("/(tab)/home");
+            try {
+              router.replace("/(tab)/home" as any);
+            } catch {
+              router.replace("/home" as any);
+            }
           }
         } catch (e) {
-          const email = (user.email || "").toLowerCase();
-          if (email.includes("admin")) {
+          const role = parsed.role;
+          if (role === "admin") {
             router.replace("/admin" as any);
-          } else if (email.includes("teacher")) {
+          } else if (role === "teacher") {
             router.replace("/teacher" as any);
-          } else if (email.includes("hostel")) {
+          } else if (role === "hostel_manager") {
             router.replace("/hostel-manager" as any);
-          } else if (email.includes("mess")) {
+          } else if (role === "mess_manager") {
             router.replace("/mess-manager" as any);
-          } else if (email.includes("fee")) {
+          } else if (role === "fee_manager") {
             router.replace("/fee-manager" as any);
-          } else if (email.includes("notice")) {
+          } else if (role === "notice_manager") {
             router.replace("/notice-manager" as any);
           } else {
-            router.replace("/(tab)/home");
+            try {
+              router.replace("/(tab)/home" as any);
+            } catch {
+              router.replace("/home" as any);
+            }
           }
         }
       } else {

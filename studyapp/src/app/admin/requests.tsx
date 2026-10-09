@@ -44,6 +44,11 @@ import {
   shareOrDownloadPdf,
   uploadRequestFile,
 } from "../../services/certificatePdfService";
+import hostelDataService from "../../services/hostelDataService";
+import {
+  notifyHostelManager,
+  notifyStudent,
+} from "../../services/notificationService";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS
@@ -377,7 +382,51 @@ export default function AdminRequestsScreen() {
         auditTrail: newTrail,
         updatedAt: serverTimestamp(),
       });
-      Alert.alert("Approved ✅", `Request ${item.complaintId || item.id} approved.`);
+
+      // 1. If Leave Request, notify Hostel Manager
+      if (item.category === "Leave" || item.passType === "leave") {
+        await notifyHostelManager(
+          `Hostel Leave Approved: ${item.requesterName || "Student"}`,
+          `Admin approved leave application for ${item.requesterName} (${item.fromDate || "Start"} to ${item.toDate || "End"}).`,
+          "leave",
+          {
+            studentName: item.requesterName,
+            studentEmail: item.requesterEmail,
+            fromDate: item.fromDate,
+            toDate: item.toDate,
+          }
+        );
+
+        try {
+          hostelDataService.addLeave({
+            studentName: item.requesterName || "Resident",
+            leaveType: (item.subCategory as any) || "Personal",
+            fromDate: item.fromDate || "Today",
+            toDate: item.toDate || "Upcoming",
+            reason: item.description || "Admin approved leave",
+            status: "Approved",
+          });
+        } catch (_) {}
+      } else if (item.category === "Gate Pass" || item.passType === "gate") {
+        await notifyHostelManager(
+          `Gate Pass Approved: ${item.requesterName || "Student"}`,
+          `Admin approved gate pass for ${item.requesterName} (${item.outTime || ""} - ${item.returnTime || ""}).`,
+          "gate_pass"
+        );
+      }
+
+      // 2. Notify student about the decision
+      if (item.requesterEmail) {
+        await notifyStudent(
+          item.requesterEmail,
+          `${item.category || "Request"} Approved! ✅`,
+          `Your ${item.category || "hostel"} application has been approved by the Administration.`,
+          item.passType === "leave" ? "leave" : item.passType === "gate" ? "gate_pass" : "general",
+          { requestId: item.id }
+        );
+      }
+
+      Alert.alert("Approved ✅", `Request ${item.complaintId || item.id} approved & student notified.`);
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Failed to approve.");
     }
@@ -395,7 +444,19 @@ export default function AdminRequestsScreen() {
         auditTrail: newTrail,
         updatedAt: serverTimestamp(),
       });
-      Alert.alert("Rejected ❌", `Request ${item.complaintId || item.id} rejected.`);
+
+      // Notify student of rejection
+      if (item.requesterEmail) {
+        await notifyStudent(
+          item.requesterEmail,
+          `${item.category || "Request"} Rejected ❌`,
+          `Your ${item.category || "hostel"} application was rejected by the Administration.`,
+          item.passType === "leave" ? "leave" : item.passType === "gate" ? "gate_pass" : "general",
+          { requestId: item.id }
+        );
+      }
+
+      Alert.alert("Rejected ❌", `Request ${item.complaintId || item.id} rejected & student notified.`);
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Failed to reject.");
     }

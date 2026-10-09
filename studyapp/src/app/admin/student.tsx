@@ -302,10 +302,23 @@ export default function AdminStudentsScreen() {
           semester: semester.trim(),
           college: college.trim(),
           role: "student",
+          status: "active",
+          isBlocked: false,
+          hostelStatus: "Unassigned",
+          roomNo: "",
+          messStatus: "Active",
+          diet: "Veg",
+          totalFee: 101000,
+          paidFee: 0,
+          dueFee: 101000,
+          feeStatus: "PENDING",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        Alert.alert("Student Added", "Student profile created successfully in Firebase.");
+        Alert.alert(
+          "Student Added",
+          "Student profile created successfully! Available across Fees, Mess, Teacher, and Notice Manager."
+        );
       }
 
       setModalVisible(false);

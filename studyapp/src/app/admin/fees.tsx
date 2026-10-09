@@ -35,6 +35,7 @@ import { useLanguage } from "../../context/LanguageContext";
 import AdminThemeToggle from "../../components/admin/AdminThemeToggle";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import AdminTopBar from "../../components/admin/AdminTopBar";
+import { downloadFeeReportPdf } from "../../services/feePdfReportService";
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "home", route: "/admin" },
@@ -123,17 +124,11 @@ export default function AdminFeesScreen() {
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [studentSearch, setStudentSearch] = useState("");
   const [studentDeptFilter, setStudentDeptFilter] = useState("All");
+  const [studentStatusFilter, setStudentStatusFilter] = useState<"All" | "Cleared" | "Pending">("All");
 
-  // Update Student Fees Modal State
-  const [feeUpdateModalVisible, setFeeUpdateModalVisible] = useState(false);
-  const [selectedStudentForFee, setSelectedStudentForFee] = useState<StudentFeeRecord | null>(null);
-  const [editTotalFees, setEditTotalFees] = useState("");
-  const [editPaidFees, setEditPaidFees] = useState("");
-  const [editRemainingFees, setEditRemainingFees] = useState("");
-  const [editFeeStatus, setEditFeeStatus] = useState<"Paid" | "Partial" | "Pending" | "Overdue">("Partial");
-  const [paymentAmountInput, setPaymentAmountInput] = useState("");
-  const [paymentTitleInput, setPaymentTitleInput] = useState("Semester Fee Installment");
-  const [savingStudentFee, setSavingStudentFee] = useState(false);
+  // Read-Only Inspection Modal for Admin (Admin cannot update fees)
+  const [inspectionModalVisible, setInspectionModalVisible] = useState(false);
+  const [inspectedStudent, setInspectedStudent] = useState<StudentFeeRecord | null>(null);
 
   // Filter & Search for Global Catalog
   const [search, setSearch] = useState("");
@@ -256,96 +251,49 @@ export default function AdminFeesScreen() {
   });
 
   // Student List Filter & Calculations
+  const clearedStudentsCount = students.filter(
+    (s) => s.feeStatus === "Paid" || s.remainingFees === 0
+  ).length;
+  const pendingStudentsCount = students.filter(
+    (s) => s.feeStatus !== "Paid" && s.remainingFees > 0
+  ).length;
+  const clearedPercentage = students.length
+    ? Math.round((clearedStudentsCount / students.length) * 100)
+    : 0;
+
   const filteredStudents = students.filter((s) => {
-    const matchesDept = studentDeptFilter === "All" || s.department.toUpperCase().includes(studentDeptFilter.toUpperCase());
+    const matchesDept =
+      studentDeptFilter === "All" ||
+      s.department.toUpperCase().includes(studentDeptFilter.toUpperCase());
     const matchesSearch =
       s.fullName.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.rollNo.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.email.toLowerCase().includes(studentSearch.toLowerCase());
-    return matchesDept && matchesSearch;
+    const isCleared = s.feeStatus === "Paid" || s.remainingFees === 0;
+    const matchesStatus =
+      studentStatusFilter === "All"
+        ? true
+        : studentStatusFilter === "Cleared"
+        ? isCleared
+        : !isCleared;
+    return matchesDept && matchesSearch && matchesStatus;
   });
 
   const totalStudentFees = students.reduce((sum, s) => sum + s.totalFees, 0);
   const totalStudentPaid = students.reduce((sum, s) => sum + s.paidFees, 0);
   const totalStudentRemaining = students.reduce((sum, s) => sum + s.remainingFees, 0);
 
-  const handleOpenStudentFeeUpdate = (student: StudentFeeRecord) => {
-    setSelectedStudentForFee(student);
-    setEditTotalFees(String(student.totalFees));
-    setEditPaidFees(String(student.paidFees));
-    setEditRemainingFees(String(student.remainingFees));
-    setEditFeeStatus(student.feeStatus);
-    setPaymentAmountInput("");
-    setPaymentTitleInput("Semester Fee Installment");
-    setFeeUpdateModalVisible(true);
-  };
-
-  const handleSaveStudentFeeUpdate = async () => {
-    if (!selectedStudentForFee) return;
-
-    const parsedTotal = parseFloat(editTotalFees.replace(/[^0-9.]/g, "")) || 0;
-    const parsedPaid = parseFloat(editPaidFees.replace(/[^0-9.]/g, "")) || 0;
-    const extraPayment = parseFloat(paymentAmountInput.replace(/[^0-9.]/g, "")) || 0;
-    const finalPaid = extraPayment > 0 ? parsedPaid + extraPayment : parsedPaid;
-    const finalRemaining = Math.max(0, parsedTotal - finalPaid);
-    const finalStatus: "Paid" | "Partial" | "Pending" | "Overdue" =
-      finalRemaining === 0 ? "Paid" : finalPaid > 0 ? "Partial" : editFeeStatus;
-
-    setSavingStudentFee(true);
-    try {
-      // 1. Update the student's main user record in users/{uid}
-      await updateDoc(doc(db, "users", selectedStudentForFee.id), {
-        totalFees: parsedTotal,
-        paidFees: finalPaid,
-        remainingFees: finalRemaining,
-        feeStatus: finalStatus,
-        lastPaymentDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-        updatedAt: serverTimestamp(),
-      });
-
-      // 2. If a specific payment installment was entered, log to users/{uid}/fees_breakdown
-      if (extraPayment > 0) {
-        await addDoc(collection(db, "users", selectedStudentForFee.id, "fees_breakdown"), {
-          title: paymentTitleInput.trim() || "Fee Payment",
-          amount: extraPayment,
-          status: "Paid",
-          category: "Tuition",
-          dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-          paidAt: serverTimestamp(),
-        });
-      }
-
-      // 3. Log Activity
-      await addDoc(collection(db, "activities"), {
-        title: `Fees Updated: ${selectedStudentForFee.fullName} (Paid: ₹${finalPaid.toLocaleString("en-IN")}, Remaining: ₹${finalRemaining.toLocaleString("en-IN")})`,
-        time: "Just now",
-        user: "Admin",
-        type: "fees",
-        createdAt: serverTimestamp(),
-      });
-
-      setFeeUpdateModalVisible(false);
-      Alert.alert(
-        "Student Fees Updated",
-        `Updated ${selectedStudentForFee.fullName}'s fees successfully.\nPaid: ₹${finalPaid.toLocaleString("en-IN")}\nRemaining: ₹${finalRemaining.toLocaleString("en-IN")}\nDirectly updated in the student's app.`
-      );
-    } catch (e: any) {
-      Alert.alert("Error Updating Fees", e?.message || "Could not update student fees.");
-    } finally {
-      setSavingStudentFee(false);
-    }
+  // Admin View-Only Inspector
+  const handleOpenStudentFeeInspection = (student: StudentFeeRecord) => {
+    setInspectedStudent(student);
+    setInspectionModalVisible(true);
   };
 
   const handleOpenAddModal = () => {
-    setEditingItem(null);
-    setTitleInput("");
-    setAmountInput("");
-    setCategoryInput("Tuition");
-    setDueDateInput("30 Oct 2026");
-    setStatusInput("Pending");
-    setRollNoInput("");
-    setDescInput("");
-    setModalVisible(true);
+    Alert.alert(
+      "Admin Access Notice",
+      "Fee management and structure modifications are restricted to the Fee Manager. Admin has view-only auditing permissions."
+    );
   };
 
   const handleOpenEditModal = (item: FeeItem) => {
@@ -516,16 +464,30 @@ export default function AdminFeesScreen() {
         <View style={[styles.contentArea, { backgroundColor: colors.adminBg }]}>
           <AdminTopBar
             title="Fee Management"
-            subtitle="Dynamic Firebase Records & Realtime Tracking"
+            subtitle="Realtime Student Audits & Fee Ledger"
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
             rightActions={
-              <TouchableOpacity
-                style={styles.addFeeHeaderBtn}
-                onPress={handleOpenAddModal}
-              >
-                <Ionicons name="add" size={18} color="#FFFFFF" />
-                <Text style={styles.addFeeHeaderBtnText}>+ Add Fee Record</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.pdfHeaderBtn, { backgroundColor: "#059669" }]}
+                  onPress={() =>
+                    downloadFeeReportPdf(students, {
+                      filter: studentStatusFilter,
+                      departmentFilter: studentDeptFilter,
+                      generatedBy: "Campusly University Admin",
+                      title: `Official University Student Fee Report (${studentStatusFilter})`,
+                    })
+                  }
+                >
+                  <Ionicons name="document-text" size={16} color="#FFFFFF" />
+                  <Text style={styles.addFeeHeaderBtnText}>📄 PDF Report</Text>
+                </TouchableOpacity>
+
+                <View style={styles.viewOnlyHeaderBadge}>
+                  <Ionicons name="lock-closed" size={13} color="#4F46E5" />
+                  <Text style={styles.viewOnlyHeaderBadgeText}>Admin (View-Only)</Text>
+                </View>
+              </View>
             }
           />
 
@@ -584,7 +546,7 @@ export default function AdminFeesScreen() {
 
             {activeTab === "students" ? (
               <View>
-                {/* HERO CARD: STUDENT REMAINING DUES */}
+                {/* HERO CARD: STUDENT REMAINING DUES & STATUS OVERVIEW */}
                 <View style={[styles.heroCard, { backgroundColor: "#4F46E5" }]}>
                   <View style={styles.heroTopRow}>
                     <View style={styles.heroIconBox}>
@@ -602,6 +564,22 @@ export default function AdminFeesScreen() {
                   <Text style={styles.heroDueDate}>
                     Across {students.length} connected students • Total: ₹ {totalStudentFees.toLocaleString("en-IN")}
                   </Text>
+
+                  {/* Cleared vs Pending Status Counter Badges */}
+                  <View style={styles.heroStatusCounterRow}>
+                    <View style={styles.heroStatusBadgeCleared}>
+                      <Ionicons name="checkmark-circle" size={15} color="#10B981" />
+                      <Text style={styles.heroStatusBadgeTextCleared}>
+                        Cleared Students: {clearedStudentsCount} ({clearedPercentage}%)
+                      </Text>
+                    </View>
+                    <View style={styles.heroStatusBadgePending}>
+                      <Ionicons name="time" size={15} color="#F59E0B" />
+                      <Text style={styles.heroStatusBadgeTextPending}>
+                        Pending Dues: {pendingStudentsCount}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
 
                 {/* 3 STAT CARDS ROW */}
@@ -635,6 +613,92 @@ export default function AdminFeesScreen() {
                       ₹ {totalStudentRemaining.toLocaleString("en-IN")}
                     </Text>
                   </View>
+                </View>
+
+                {/* CLEARED VS PENDING STATUS FILTER TABS */}
+                <View style={[styles.statusTabsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.statusTabsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.statusTabPill,
+                        studentStatusFilter === "All" && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      ]}
+                      onPress={() => setStudentStatusFilter("All")}
+                    >
+                      <Text
+                        style={[
+                          styles.statusTabPillText,
+                          { color: studentStatusFilter === "All" ? "#FFFFFF" : colors.text },
+                          studentStatusFilter === "All" && { fontWeight: "700" },
+                        ]}
+                      >
+                        All Students ({students.length})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.statusTabPill,
+                        studentStatusFilter === "Cleared" && { backgroundColor: "#10B981", borderColor: "#10B981" },
+                      ]}
+                      onPress={() => setStudentStatusFilter("Cleared")}
+                    >
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color={studentStatusFilter === "Cleared" ? "#FFFFFF" : "#10B981"}
+                      />
+                      <Text
+                        style={[
+                          styles.statusTabPillText,
+                          { color: studentStatusFilter === "Cleared" ? "#FFFFFF" : "#10B981" },
+                          studentStatusFilter === "Cleared" && { fontWeight: "700" },
+                        ]}
+                      >
+                        Cleared ({clearedStudentsCount})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.statusTabPill,
+                        studentStatusFilter === "Pending" && { backgroundColor: "#EA580C", borderColor: "#EA580C" },
+                      ]}
+                      onPress={() => setStudentStatusFilter("Pending")}
+                    >
+                      <Ionicons
+                        name="time"
+                        size={14}
+                        color={studentStatusFilter === "Pending" ? "#FFFFFF" : "#EA580C"}
+                      />
+                      <Text
+                        style={[
+                          styles.statusTabPillText,
+                          { color: studentStatusFilter === "Pending" ? "#FFFFFF" : "#EA580C" },
+                          studentStatusFilter === "Pending" && { fontWeight: "700" },
+                        ]}
+                      >
+                        Pending Dues ({pendingStudentsCount})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.downloadPdfActionBtn, { backgroundColor: "#059669" }]}
+                    onPress={() =>
+                      downloadFeeReportPdf(students, {
+                        filter: studentStatusFilter,
+                        departmentFilter: studentDeptFilter,
+                        generatedBy: "Campusly University Admin",
+                        title: `University Student Fee Dues & Status Report (${studentStatusFilter})`,
+                      })
+                    }
+                  >
+                    <Ionicons name="download-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.downloadPdfActionBtnText}>
+                      Download Serialized PDF ({studentStatusFilter})
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
                 {/* DEPARTMENT FILTER PILLS */}
@@ -797,14 +861,22 @@ export default function AdminFeesScreen() {
                               </View>
                             </View>
 
-                            {/* Update Button */}
-                            <TouchableOpacity
-                              style={[styles.updateStudentFeeBtn, { backgroundColor: colors.primary }]}
-                              onPress={() => handleOpenStudentFeeUpdate(s)}
-                            >
-                              <Ionicons name="create-outline" size={16} color="#FFFFFF" />
-                              <Text style={styles.updateStudentFeeBtnText}>Update Student Fees & Portions</Text>
-                            </TouchableOpacity>
+                            {/* Admin View-Only Inspector & Role Guard */}
+                            <View style={styles.adminActionContainer}>
+                              <View style={[styles.readOnlyLockPill, { backgroundColor: isDark ? "#1E293B" : "#F1F5F9", borderColor: colors.border }]}>
+                                <Ionicons name="lock-closed" size={13} color={colors.textSecondary} />
+                                <Text style={[styles.readOnlyLockText, { color: colors.textSecondary }]}>
+                                  View-Only Audit • Managed by Fee Manager
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                style={[styles.inspectStudentBtn, { backgroundColor: colors.primary }]}
+                                onPress={() => handleOpenStudentFeeInspection(s)}
+                              >
+                                <Ionicons name="eye-outline" size={15} color="#FFFFFF" />
+                                <Text style={styles.inspectStudentBtnText}>Inspect Dues Ledger</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         );
                       })}
@@ -983,15 +1055,13 @@ export default function AdminFeesScreen() {
                             </View>
                           </View>
 
-                          {/* Right Action buttons */}
+                          {/* Right Action: Admin View-Only Status Indicator */}
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                            {/* Quick Toggle Status */}
-                            <TouchableOpacity
+                            <View
                               style={[
                                 styles.statusBadge,
                                 item.isPaid ? styles.paidBadge : styles.pendingBadge,
                               ]}
-                              onPress={() => handleToggleStatus(item)}
                             >
                               <Ionicons
                                 name={item.isPaid ? "checkmark-circle" : "time-outline"}
@@ -1007,23 +1077,12 @@ export default function AdminFeesScreen() {
                               >
                                 {item.status}
                               </Text>
-                            </TouchableOpacity>
+                            </View>
 
-                            {/* Edit Button */}
-                            <TouchableOpacity
-                              style={[styles.actionIconBtn, { backgroundColor: colors.primaryLight }]}
-                              onPress={() => handleOpenEditModal(item)}
-                            >
-                              <Ionicons name="pencil" size={14} color={colors.primary} />
-                            </TouchableOpacity>
-
-                            {/* Delete Button */}
-                            <TouchableOpacity
-                              style={[styles.actionIconBtn, { backgroundColor: "#FEE2E2" }]}
-                              onPress={() => handleDeleteFee(item)}
-                            >
-                              <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                            </TouchableOpacity>
+                            <View style={[styles.viewOnlyCatalogBadge, { backgroundColor: isDark ? "#1E293B" : "#F1F5F9", borderColor: colors.border }]}>
+                              <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+                              <Text style={[styles.viewOnlyCatalogText, { color: colors.textSecondary }]}>Managed by Fee Mgr</Text>
+                            </View>
                           </View>
                         </View>
                       ))}
@@ -1069,152 +1128,126 @@ export default function AdminFeesScreen() {
         </View>
       </View>
 
-      {/* UPDATE STUDENT FEES MODAL */}
+      {/* READ-ONLY STUDENT FEE INSPECTION MODAL (ADMIN AUDIT ONLY) */}
       <Modal
-        visible={feeUpdateModalVisible}
+        visible={inspectionModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setFeeUpdateModalVisible(false)}
+        onRequestClose={() => setInspectionModalVisible(false)}
       >
-        <Pressable style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]} onPress={() => setFeeUpdateModalVisible(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+        <Pressable
+          style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}
+          onPress={() => setInspectionModalVisible(false)}
+        >
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeaderRow}>
               <View>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Update Student Fees</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Student Fee Inspection</Text>
                 <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                  Directly synchronizes to student app in real-time
+                  Official Audit & Realtime Ledger (View-Only)
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setFeeUpdateModalVisible(false)}>
+              <TouchableOpacity onPress={() => setInspectionModalVisible(false)}>
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            {selectedStudentForFee && (
+            {inspectedStudent && (
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+                {/* Admin View-Only Notice Banner */}
+                <View style={[styles.adminNoticeBox, { backgroundColor: isDark ? "#1E293B" : "#EFF6FF", borderColor: "#BFDBFE" }]}>
+                  <Ionicons name="information-circle" size={20} color="#2563EB" />
+                  <Text style={[styles.adminNoticeText, { color: isDark ? "#93C5FD" : "#1E40AF" }]}>
+                    Administrator Audit Mode: Fee amounts, due dates, and student records are maintained exclusively by the Fee Manager.
+                  </Text>
+                </View>
+
                 {/* Student Banner */}
-                <View style={[styles.studentBannerBox, { backgroundColor: colors.primaryLight, borderColor: colors.border }]}>
-                  <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={[styles.bannerStudentName, { color: colors.primary }]}>{selectedStudentForFee.fullName}</Text>
+                <View style={[styles.studentBannerBox, { backgroundColor: colors.primaryLight, borderColor: colors.border, marginTop: 12 }]}>
+                  <Ionicons name="person-circle-outline" size={32} color={colors.primary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.bannerStudentName, { color: colors.primary }]}>{inspectedStudent.fullName}</Text>
                     <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                      Roll No: {selectedStudentForFee.rollNo} • {selectedStudentForFee.department}
+                      Roll No: {inspectedStudent.rollNo} • Dept: {inspectedStudent.department} • Sem {inspectedStudent.semester}
                     </Text>
+                    {!!inspectedStudent.email && (
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>{inspectedStudent.email}</Text>
+                    )}
                   </View>
                 </View>
 
-                {/* Total Fees */}
-                <Text style={[styles.modalInputLabel, { color: colors.text, marginTop: 14 }]}>Total Course Fees (₹) *</Text>
-                <TextInput
-                  style={[styles.modalTextInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  placeholder="e.g. 64000"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="numeric"
-                  value={editTotalFees}
-                  onChangeText={(val) => {
-                    setEditTotalFees(val);
-                    const t = parseFloat(val.replace(/[^0-9.]/g, "")) || 0;
-                    const p = parseFloat(editPaidFees.replace(/[^0-9.]/g, "")) || 0;
-                    setEditRemainingFees(String(Math.max(0, t - p)));
-                  }}
-                />
+                {/* Metrics Grid */}
+                <View style={{ gap: 10, marginTop: 14 }}>
+                  <View style={[styles.inspectMetricRow, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                    <Text style={[styles.inspectMetricLabel, { color: colors.textSecondary }]}>Total Course Fees:</Text>
+                    <Text style={[styles.inspectMetricValue, { color: colors.text }]}>
+                      ₹ {inspectedStudent.totalFees.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
 
-                {/* Paid Fees */}
-                <Text style={[styles.modalInputLabel, { color: colors.text, marginTop: 14 }]}>Paid Amount / Portion (₹) *</Text>
-                <TextInput
-                  style={[styles.modalTextInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  placeholder="e.g. 45000"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="numeric"
-                  value={editPaidFees}
-                  onChangeText={(val) => {
-                    setEditPaidFees(val);
-                    const t = parseFloat(editTotalFees.replace(/[^0-9.]/g, "")) || 0;
-                    const p = parseFloat(val.replace(/[^0-9.]/g, "")) || 0;
-                    setEditRemainingFees(String(Math.max(0, t - p)));
-                  }}
-                />
+                  <View style={[styles.inspectMetricRow, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                    <Text style={[styles.inspectMetricLabel, { color: colors.textSecondary }]}>Paid Amount / Collected:</Text>
+                    <Text style={[styles.inspectMetricValue, { color: "#10B981" }]}>
+                      ₹ {inspectedStudent.paidFees.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
 
-                {/* Remaining Amount (Auto-Calculated) */}
-                <View style={[styles.remainingPreviewBox, { backgroundColor: "#FEF2F2", borderColor: "#FCA5A5" }]}>
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#991B1B" }}>Remaining Portion (Auto-Calculated):</Text>
-                  <Text style={{ fontSize: 16, fontWeight: "800", color: "#DC2626", marginTop: 2 }}>
-                    ₹ {(Math.max(0, (parseFloat(editTotalFees.replace(/[^0-9.]/g, "")) || 0) - (parseFloat(editPaidFees.replace(/[^0-9.]/g, "")) || 0))).toLocaleString("en-IN")}
-                  </Text>
-                </View>
+                  <View style={[styles.inspectMetricRow, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                    <Text style={[styles.inspectMetricLabel, { color: colors.textSecondary }]}>Remaining Portion / Due:</Text>
+                    <Text style={[styles.inspectMetricValue, { color: inspectedStudent.remainingFees <= 0 ? "#10B981" : "#EF4444" }]}>
+                      ₹ {inspectedStudent.remainingFees.toLocaleString("en-IN")}
+                    </Text>
+                  </View>
 
-                {/* Fee Status */}
-                <Text style={[styles.modalInputLabel, { color: colors.text, marginTop: 14 }]}>Payment Status</Text>
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-                  {(["Paid", "Partial", "Pending", "Overdue"] as const).map((st) => (
-                    <TouchableOpacity
-                      key={st}
+                  <View style={[styles.inspectMetricRow, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                    <Text style={[styles.inspectMetricLabel, { color: colors.textSecondary }]}>Fee Status:</Text>
+                    <View
                       style={[
-                        styles.categoryPickerBtn,
-                        {
-                          flex: 1,
-                          backgroundColor: editFeeStatus === st ? colors.primary : colors.inputBg,
-                          borderColor: editFeeStatus === st ? colors.primary : colors.border,
-                        },
+                        styles.studentStatusBadge,
+                        inspectedStudent.remainingFees <= 0
+                          ? { backgroundColor: "#DCFCE7" }
+                          : inspectedStudent.paidFees > 0
+                          ? { backgroundColor: "#FEF3C7" }
+                          : { backgroundColor: "#FEE2E2" },
                       ]}
-                      onPress={() => setEditFeeStatus(st)}
                     >
                       <Text
-                        style={{
-                          color: editFeeStatus === st ? "#FFFFFF" : colors.text,
-                          fontSize: 11,
-                          fontWeight: editFeeStatus === st ? "700" : "500",
-                          textAlign: "center",
-                        }}
+                        style={[
+                          styles.studentStatusText,
+                          {
+                            color:
+                              inspectedStudent.remainingFees <= 0
+                                ? "#16A34A"
+                                : inspectedStudent.paidFees > 0
+                                ? "#D97706"
+                                : "#EF4444",
+                          },
+                        ]}
                       >
-                        {st}
+                        {inspectedStudent.feeStatus}
                       </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                    </View>
+                  </View>
 
-                {/* Record New Payment Section (Optional) */}
-                <View style={[styles.recordPaymentSection, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                  <Text style={[styles.recordPaymentTitle, { color: colors.text }]}>Record New Payment (Optional)</Text>
-                  <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 8 }}>
-                    Add an extra payment amount to automatically credit this student.
-                  </Text>
-                  <TextInput
-                    style={[styles.modalTextInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text, marginBottom: 8 }]}
-                    placeholder="Installment Description (e.g. Sem 4 Tuition Due)"
-                    placeholderTextColor={colors.textMuted}
-                    value={paymentTitleInput}
-                    onChangeText={setPaymentTitleInput}
-                  />
-                  <TextInput
-                    style={[styles.modalTextInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-                    placeholder="Payment Amount to Add (₹ e.g. 5000)"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="numeric"
-                    value={paymentAmountInput}
-                    onChangeText={setPaymentAmountInput}
-                  />
+                  <View style={[styles.inspectMetricRow, { backgroundColor: isDark ? "#1E293B" : "#F8FAFC", borderColor: colors.border }]}>
+                    <Text style={[styles.inspectMetricLabel, { color: colors.textSecondary }]}>Last Payment Date:</Text>
+                    <Text style={[styles.inspectMetricValue, { color: colors.text }]}>
+                      {inspectedStudent.lastPaymentDate || "No recorded payment"}
+                    </Text>
+                  </View>
                 </View>
               </ScrollView>
             )}
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
-                style={[styles.cancelBtn, { borderColor: colors.border }]}
-                onPress={() => setFeeUpdateModalVisible(false)}
+                style={[styles.closeModalBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setInspectionModalVisible(false)}
               >
-                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-                onPress={handleSaveStudentFeeUpdate}
-                disabled={savingStudentFee}
-              >
-                {savingStudentFee ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.saveBtnText}>Save & Directly Update Student</Text>
-                )}
+                <Text style={styles.closeModalBtnText}>Close Audit Window</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -2014,6 +2047,192 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   saveBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  pdfHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  viewOnlyHeaderBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(79, 70, 229, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  viewOnlyHeaderBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4F46E5",
+  },
+  heroStatusCounterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.15)",
+  },
+  heroStatusBadgeCleared: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  heroStatusBadgeTextCleared: {
+    color: "#A7F3D0",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  heroStatusBadgePending: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  heroStatusBadgeTextPending: {
+    color: "#FDE68A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  statusTabsCard: {
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 10,
+  },
+  statusTabsRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  statusTabPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  statusTabPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  downloadPdfActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  downloadPdfActionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  adminActionContainer: {
+    gap: 8,
+    marginTop: 8,
+  },
+  readOnlyLockPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  readOnlyLockText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  inspectStudentBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  inspectStudentBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  viewOnlyCatalogBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  viewOnlyCatalogText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  adminNoticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  adminNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  inspectMetricRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  inspectMetricLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  inspectMetricValue: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  closeModalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
+  closeModalBtnText: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",

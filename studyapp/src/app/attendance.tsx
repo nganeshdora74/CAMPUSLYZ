@@ -24,6 +24,7 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth, db } from "../firebase/config";
+import UniversalRoleControls from "../components/UniversalRoleControls";
 import {
   rechangeStudentAttendance,
   syncAttendanceToStudentProfile,
@@ -382,32 +383,35 @@ export default function AttendanceScreen() {
         </View>
 
         {/* Role Badge & Portal Controls */}
-        {isPrivileged ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <TouchableOpacity
-              style={styles.rechangeHeaderBtn}
-              onPress={() => openRechangeModalForSubject(selectedSubjectFilter === "All" ? "Data Structures" : selectedSubjectFilter)}
-            >
-              <Ionicons name="create-outline" size={15} color="#FFFFFF" />
-              <Text style={styles.rechangeHeaderBtnText}>Re-change</Text>
-            </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <UniversalRoleControls compact />
+          {isPrivileged ? (
+            <>
+              <TouchableOpacity
+                style={styles.rechangeHeaderBtn}
+                onPress={() => openRechangeModalForSubject(selectedSubjectFilter === "All" ? "Data Structures" : selectedSubjectFilter)}
+              >
+                <Ionicons name="create-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.rechangeHeaderBtnText}>Re-change</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.adminSwitchBtn}
-              onPress={() => router.push("/admin/attendence")}
-            >
-              <Ionicons name="grid-outline" size={15} color="#2563EB" />
-              <Text style={styles.adminSwitchText}>
-                {currentUserRole === "teacher" ? "Class Console" : "Admin Console"}
-              </Text>
+              <TouchableOpacity
+                style={styles.adminSwitchBtn}
+                onPress={() => router.push("/admin/attendence")}
+              >
+                <Ionicons name="grid-outline" size={15} color="#2563EB" />
+                <Text style={styles.adminSwitchText}>
+                  {currentUserRole === "teacher" ? "Class Console" : "Admin Console"}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity style={styles.readOnlyBadge} onPress={handleStudentUnauthorizedAction}>
+              <Ionicons name="lock-closed" size={13} color="#64748B" />
+              <Text style={styles.readOnlyBadgeText}>Student View (Read-Only)</Text>
             </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.readOnlyBadge} onPress={handleStudentUnauthorizedAction}>
-            <Ionicons name="lock-closed" size={13} color="#64748B" />
-            <Text style={styles.readOnlyBadgeText}>Student View (Read-Only)</Text>
-          </TouchableOpacity>
-        )}
+          )}
+        </View>
       </View>
 
       {/* =================================================

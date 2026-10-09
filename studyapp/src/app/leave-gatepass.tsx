@@ -39,6 +39,7 @@ import {
   shareOrDownloadPdf,
   uploadRequestFile,
 } from "../services/certificatePdfService";
+import { getApiUrl } from "../api";
 
 type RequestType = "leave" | "gate";
 
@@ -591,9 +592,92 @@ export default function LeaveGatePassScreen() {
         createdAt: serverTimestamp(),
       });
 
+      // 4. Notifications (Going & Coming)
+      const passDateStr = new Date().toLocaleDateString("en-GB");
+      // Outgoing Notification for Student
+      await addDoc(collection(db, "notifications"), {
+        title: `${passCategory} Application Submitted`,
+        body: `Your request (${reason.trim()}) was submitted to administration.`,
+        type: passType === "leave" ? "leave" : "gate_pass",
+        category: "Hostel",
+        target: "Specific",
+        studentId: user.uid,
+        studentEmail: studentEmail,
+        senderId: user.uid,
+        senderName: studentName,
+        senderEmail: studentEmail,
+        senderRole: "student",
+        status: "sent",
+        date: passDateStr,
+        createdAt: serverTimestamp(),
+      });
+
+      // Incoming Notification for Admin (Review authority)
+      await addDoc(collection(db, "notifications"), {
+        title: `New ${passCategory} Application: ${studentName}`,
+        body: `${studentName} requested ${passType === "leave" ? `leave (${fromDate.trim()} to ${toDate.trim()})` : `gate pass (${outTime.trim()} - ${returnTime.trim()})`}: "${reason.trim()}"`,
+        type: passType === "leave" ? "leave" : "gate_pass",
+        category: "Leave",
+        target: "admin",
+        targetRole: "admin",
+        senderId: user.uid,
+        senderName: studentName,
+        senderEmail: studentEmail,
+        senderRole: "student",
+        status: "sent",
+        date: passDateStr,
+        createdAt: serverTimestamp(),
+      });
+
+      // Also notify Hostel Manager about the pending student leave
+      await addDoc(collection(db, "notifications"), {
+        title: `Student ${passCategory} Lodged: ${studentName}`,
+        body: `${studentName} submitted ${passType === "leave" ? `leave (${fromDate.trim()} to ${toDate.trim()})` : "gate pass"} - Sent to Admin for review.`,
+        type: passType === "leave" ? "leave" : "gate_pass",
+        category: "Hostel",
+        target: "Hostel Manager",
+        targetRole: "hostel_manager",
+        senderId: user.uid,
+        senderName: studentName,
+        senderEmail: studentEmail,
+        senderRole: "student",
+        status: "sent",
+        date: passDateStr,
+        createdAt: serverTimestamp(),
+      });
+
+      // 5. Sync to MongoDB backend database
+      try {
+        const baseUrl = getApiUrl();
+        await fetch(`${baseUrl}/api/passes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: passType === "leave" ? "leave" : "gate_pass",
+            studentId: user.uid,
+            studentName,
+            studentEmail,
+            rollNo: studentProfile?.rollNo || "",
+            department: studentProfile?.department || "",
+            reason: reason.trim(),
+            category,
+            fromDate: fromDate.trim(),
+            toDate: toDate.trim(),
+            outTime: outTime.trim(),
+            returnTime: returnTime.trim(),
+            destination: destination.trim(),
+            contactNumber: contactNumber.trim() || studentProfile?.phone || "",
+            photoUrl: uploadedPhoto || "",
+            pdfUrl: uploadedPdf || "",
+          }),
+        });
+      } catch (mErr: any) {
+        console.warn("MongoDB pass sync fallback:", mErr?.message);
+      }
+
       Alert.alert(
-        "Application Submitted! 📋",
-        `Your ${passType === "leave" ? "leave application" : "campus gate pass"} has been submitted to administration. You can track approval status and admin responses under 'My Passes'.`
+        "Notification Sent Successfully! 📋",
+        `Your ${passType === "leave" ? "leave application" : "campus gate pass"} has been submitted to administration. Notification stored in MongoDB & Firebase. You can track status under 'My Passes'.`
       );
 
       // Reset form

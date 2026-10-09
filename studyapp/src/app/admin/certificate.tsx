@@ -113,6 +113,10 @@ export interface CertificateItem {
   pdfUrl?: string;
   verified?: boolean;
   createdAt?: any;
+  issuedByRole?: "admin" | "notice_manager" | string;
+  canNoticeManagerUpdate?: boolean;
+  adminActionStatus?: string;
+  adminRemarks?: string;
 }
 
 export interface CertRequestItem {
@@ -194,6 +198,73 @@ export default function AdminCertificateScreen() {
   const [targetCertForDelete, setTargetCertForDelete] = useState<CertificateItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Notice Manager Supervision & Admin Takeover Action States
+  const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [targetCertForAction, setTargetCertForAction] = useState<CertificateItem | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Toggle whether Notice Manager can update/edit this certificate
+  const handleToggleNoticeManagerUpdate = async (cert: CertificateItem) => {
+    try {
+      const newStatus = cert.canNoticeManagerUpdate === false ? true : false;
+      const certRef = doc(db, "certificates", cert.id);
+      await updateDoc(certRef, {
+        canNoticeManagerUpdate: newStatus,
+        adminActionStatus: newStatus ? "Notice Manager Permitted" : "Locked by Admin",
+        updatedAt: serverTimestamp(),
+      });
+      Alert.alert(
+        "Notice Manager Permission Updated",
+        newStatus
+          ? `Notice Manager is now ALLOWED to update "${cert.title}".`
+          : `Notice Manager has been LOCKED from updating "${cert.title}". Only Admin can edit/modify.`
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to update permission.");
+    }
+  };
+
+  // Dispatch urgent notification task to Notice Manager
+  const handleSendNoticeManagerUrgentTask = async (cert: CertificateItem) => {
+    try {
+      await addDoc(collection(db, "notifications"), {
+        title: "⚠️ Urgent Action Required by Notice Manager",
+        message: `Admin has flagged certificate "${cert.title}" for student ${cert.studentName} (${cert.studentRollNo}). Immediate completion/review required.`,
+        targetRole: "notice_manager",
+        createdAt: serverTimestamp(),
+        type: "urgent_task",
+      });
+      Alert.alert(
+        "Urgent Task Dispatched",
+        `High-priority alert sent to Notice Manager to complete/review "${cert.title}".`
+      );
+      setActionModalVisible(false);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to send notification.");
+    }
+  };
+
+  // Admin Direct Takeover & Verify
+  const handleAdminMarkVerified = async (cert: CertificateItem) => {
+    try {
+      setActionLoading(true);
+      const certRef = doc(db, "certificates", cert.id);
+      await updateDoc(certRef, {
+        verified: true,
+        adminActionStatus: "Verified & Approved by Admin",
+        canNoticeManagerUpdate: false,
+        updatedAt: serverTimestamp(),
+        lastUpdatedBy: "Admin",
+      });
+      Alert.alert("Admin Verified", `Certificate "${cert.title}" is officially approved and locked by Admin.`);
+      setActionModalVisible(false);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to verify certificate.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 1. Realtime Listeners: Users / Students
   useEffect(() => {
     const usersCol = collection(db, "users");
@@ -255,6 +326,10 @@ export default function AdminCertificateScreen() {
             pdfUrl: data.pdfUrl || undefined,
             verified: true,
             createdAt: data.createdAt,
+            issuedByRole: data.issuedByRole || (data.issuedBy?.includes("Notice") ? "notice_manager" : "admin"),
+            canNoticeManagerUpdate: data.canNoticeManagerUpdate !== false,
+            adminActionStatus: data.adminActionStatus || "Normal",
+            adminRemarks: data.adminRemarks || "",
           };
         });
 
@@ -503,6 +578,9 @@ export default function AdminCertificateScreen() {
         photoUrl: req.photoUrl || undefined,
         verified: true,
         requestId: req.id,
+        issuedByRole: "admin",
+        canNoticeManagerUpdate: true,
+        adminActionStatus: "Normal",
         createdAt: serverTimestamp(),
       });
 
@@ -857,6 +935,9 @@ export default function AdminCertificateScreen() {
           pdfUrl: finalPdfUrl || undefined,
           verified: true,
           requestId: fulfillingRequestId || undefined,
+          issuedByRole: "admin",
+          canNoticeManagerUpdate: true,
+          adminActionStatus: "Normal",
           createdAt: serverTimestamp(),
         });
 
@@ -1272,6 +1353,17 @@ export default function AdminCertificateScreen() {
                                   <Text style={styles.pdfAttachedPillText}>Official PDF</Text>
                                 </View>
                               ) : null}
+                              {cert.issuedByRole === "notice_manager" ? (
+                                <View style={[styles.photoAttachedPill, { backgroundColor: isDark ? "#451A03" : "#FEF3C7" }]}>
+                                  <Ionicons name="megaphone" size={11} color="#D97706" />
+                                  <Text style={[styles.photoAttachedPillText, { color: "#D97706" }]}>Notice Manager</Text>
+                                </View>
+                              ) : (
+                                <View style={[styles.photoAttachedPill, { backgroundColor: isDark ? "#1E1B4B" : "#EEF2FF" }]}>
+                                  <Ionicons name="shield-checkmark" size={11} color="#4F46E5" />
+                                  <Text style={[styles.photoAttachedPillText, { color: "#4F46E5" }]}>Admin</Text>
+                                </View>
+                              )}
                             </View>
                             <Text style={[styles.issuedCertSubject, { color: colors.primary }]}>{cert.subject}</Text>
                           </View>
@@ -1361,6 +1453,152 @@ export default function AdminCertificateScreen() {
                           <View style={{ marginLeft: "auto", alignItems: "flex-end" }}>
                             <Text style={{ fontSize: 11, color: colors.textSecondary }}>ID: {cert.credentialId}</Text>
                             <Text style={{ fontSize: 11, color: colors.textMuted }}>By {cert.issuedBy}</Text>
+                          </View>
+                        </View>
+
+                        {/* Notice Manager Supervision & Action Row */}
+                        <View
+                          style={{
+                            marginTop: 10,
+                            paddingTop: 10,
+                            borderTopWidth: 1,
+                            borderTopColor: isDark ? "#334155" : "#E2E8F0",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            flexWrap: "wrap",
+                            gap: 8,
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {/* Permission Indicator */}
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                                paddingHorizontal: 8,
+                                paddingVertical: 4,
+                                borderRadius: 6,
+                                backgroundColor:
+                                  cert.canNoticeManagerUpdate !== false
+                                    ? isDark
+                                      ? "#064E3B"
+                                      : "#ECFDF5"
+                                    : isDark
+                                    ? "#7F1D1D"
+                                    : "#FEF2F2",
+                                borderWidth: 1,
+                                borderColor:
+                                  cert.canNoticeManagerUpdate !== false ? "#10B981" : "#EF4444",
+                              }}
+                            >
+                              <Ionicons
+                                name={
+                                  cert.canNoticeManagerUpdate !== false
+                                    ? "checkmark-circle"
+                                    : "lock-closed"
+                                }
+                                size={12}
+                                color={cert.canNoticeManagerUpdate !== false ? "#059669" : "#DC2626"}
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: "700",
+                                  color:
+                                    cert.canNoticeManagerUpdate !== false ? "#059669" : "#DC2626",
+                                }}
+                              >
+                                {cert.canNoticeManagerUpdate !== false
+                                  ? "Notice Manager: Can Edit"
+                                  : "Notice Manager: Locked"}
+                              </Text>
+                            </View>
+
+                            {cert.adminActionStatus ? (
+                              <View
+                                style={{
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3,
+                                  borderRadius: 6,
+                                  backgroundColor: isDark ? "#312E81" : "#EEF2FF",
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, color: "#6366F1", fontWeight: "600" }}>
+                                  {cert.adminActionStatus}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+
+                          {/* Quick Admin Intervention Controls */}
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                borderRadius: 6,
+                                backgroundColor:
+                                  cert.canNoticeManagerUpdate !== false
+                                    ? isDark
+                                      ? "#451A03"
+                                      : "#FFFBEB"
+                                    : isDark
+                                    ? "#064E3B"
+                                    : "#ECFDF5",
+                                borderWidth: 1,
+                                borderColor:
+                                  cert.canNoticeManagerUpdate !== false ? "#F59E0B" : "#10B981",
+                              }}
+                              onPress={() => handleToggleNoticeManagerUpdate(cert)}
+                            >
+                              <Ionicons
+                                name={
+                                  cert.canNoticeManagerUpdate !== false
+                                    ? "lock-closed-outline"
+                                    : "lock-open-outline"
+                                }
+                                size={12}
+                                color={
+                                  cert.canNoticeManagerUpdate !== false ? "#D97706" : "#059669"
+                                }
+                              />
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: "700",
+                                  color:
+                                    cert.canNoticeManagerUpdate !== false ? "#D97706" : "#059669",
+                                }}
+                              >
+                                {cert.canNoticeManagerUpdate !== false ? "Lock Notice Edit" : "Allow Notice Edit"}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 5,
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 6,
+                                backgroundColor: "#6366F1",
+                              }}
+                              onPress={() => {
+                                setTargetCertForAction(cert);
+                                setActionModalVisible(true);
+                              }}
+                            >
+                              <Ionicons name="flash" size={13} color="#FFFFFF" />
+                              <Text style={{ fontSize: 11, fontWeight: "700", color: "#FFFFFF" }}>
+                                Take Action
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
                       </View>
@@ -2253,6 +2491,394 @@ export default function AdminCertificateScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* NOTICE MANAGER SUPERVISION & TAKE ACTION MODAL */}
+      <Modal
+        visible={actionModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setActionModalVisible(false)}>
+          <Pressable
+            style={[
+              styles.declineModalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                maxWidth: 520,
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: "#6366F120",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="shield-checkmark" size={24} color="#6366F1" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.text }}>
+                    Certificate Supervision & Actions
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    Admin control & Notice Manager delegation
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity onPress={() => setActionModalVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Target Certificate Summary Box */}
+            {targetCertForAction ? (
+              <View
+                style={{
+                  backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+                  padding: 12,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: isDark ? "#334155" : "#E2E8F0",
+                  marginBottom: 16,
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>
+                  {targetCertForAction.title}
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                  Recipient: {targetCertForAction.studentName} ({targetCertForAction.studentRollNo})
+                </Text>
+
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 6,
+                      backgroundColor:
+                        targetCertForAction.issuedByRole === "notice_manager" ? "#FEF3C7" : "#EEF2FF",
+                    }}
+                  >
+                    <Ionicons
+                      name={
+                        targetCertForAction.issuedByRole === "notice_manager"
+                          ? "megaphone"
+                          : "shield-checkmark"
+                      }
+                      size={11}
+                      color={
+                        targetCertForAction.issuedByRole === "notice_manager" ? "#D97706" : "#4F46E5"
+                      }
+                    />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color:
+                          targetCertForAction.issuedByRole === "notice_manager"
+                            ? "#D97706"
+                            : "#4F46E5",
+                      }}
+                    >
+                      {targetCertForAction.issuedByRole === "notice_manager"
+                        ? "Issued by Notice Manager"
+                        : "Issued by Admin"}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 6,
+                      backgroundColor:
+                        targetCertForAction.canNoticeManagerUpdate !== false ? "#DCFCE7" : "#FEE2E2",
+                    }}
+                  >
+                    <Ionicons
+                      name={
+                        targetCertForAction.canNoticeManagerUpdate !== false
+                          ? "checkmark-circle"
+                          : "lock-closed"
+                      }
+                      size={11}
+                      color={
+                        targetCertForAction.canNoticeManagerUpdate !== false ? "#16A34A" : "#DC2626"
+                      }
+                    />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color:
+                          targetCertForAction.canNoticeManagerUpdate !== false
+                            ? "#16A34A"
+                            : "#DC2626",
+                      }}
+                    >
+                      {targetCertForAction.canNoticeManagerUpdate !== false
+                        ? "Notice Manager Can Edit"
+                        : "Notice Manager Locked"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text, marginBottom: 10 }}>
+              Available Administrative Actions:
+            </Text>
+
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 10 }}>
+                {/* ACTION 1: Urgent task dispatch */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#451A03" : "#FDE68A",
+                    backgroundColor: isDark ? "#2A1805" : "#FFFBEB",
+                  }}
+                  onPress={() => {
+                    if (targetCertForAction) handleSendNoticeManagerUrgentTask(targetCertForAction);
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#F59E0B22",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="notifications-outline" size={18} color="#D97706" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: isDark ? "#FDE68A" : "#92400E" }}>
+                      Send Urgent Task to Notice Manager
+                    </Text>
+                    <Text style={{ fontSize: 11, color: isDark ? "#FCD34D" : "#B45309", marginTop: 2 }}>
+                      Dispatch an immediate notification alerting Notice Manager to finalize certificate details or attachments.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* ACTION 2: Toggle Notice Manager Update permissions */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#1E293B" : "#E2E8F0",
+                    backgroundColor: isDark ? "#0F172A" : "#F8FAFC",
+                  }}
+                  onPress={() => {
+                    if (targetCertForAction) {
+                      handleToggleNoticeManagerUpdate(targetCertForAction);
+                      setActionModalVisible(false);
+                    }
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor:
+                        targetCertForAction?.canNoticeManagerUpdate !== false ? "#FEE2E2" : "#DCFCE7",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons
+                      name={
+                        targetCertForAction?.canNoticeManagerUpdate !== false
+                          ? "lock-closed"
+                          : "lock-open"
+                      }
+                      size={18}
+                      color={
+                        targetCertForAction?.canNoticeManagerUpdate !== false ? "#DC2626" : "#16A34A"
+                      }
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text }}>
+                      {targetCertForAction?.canNoticeManagerUpdate !== false
+                        ? "Lock Notice Manager Permission"
+                        : "Allow Notice Manager Permission"}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                      {targetCertForAction?.canNoticeManagerUpdate !== false
+                        ? "Block Notice Manager from modifying or deleting this certificate."
+                        : "Grant Notice Manager permission to edit or update details."}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* ACTION 3: Direct Admin Takeover & Update */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#312E81" : "#C7D2FE",
+                    backgroundColor: isDark ? "#1E1B4B" : "#EEF2FF",
+                  }}
+                  onPress={() => {
+                    if (targetCertForAction) {
+                      setActionModalVisible(false);
+                      handleOpenEditCertificate(targetCertForAction);
+                    }
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#4F46E522",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#4F46E5" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#4F46E5" }}>
+                      Direct Admin Takeover & Update
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#6366F1", marginTop: 2 }}>
+                      Override Notice Manager: edit certificate information, re-generate PDF, or attach verified photos.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* ACTION 4: Mark Admin Verified & Seal */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#064E3B" : "#A7F3D0",
+                    backgroundColor: isDark ? "#022C22" : "#ECFDF5",
+                  }}
+                  onPress={() => {
+                    if (targetCertForAction) handleAdminMarkVerified(targetCertForAction);
+                  }}
+                  disabled={actionLoading}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#10B98122",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="shield-checkmark" size={18} color="#059669" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#059669" }}>
+                      Stamp Official Admin Verification & Lock
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#047857", marginTop: 2 }}>
+                      Seal this certificate with final Admin Verification and lock against any future Notice Manager changes.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* ACTION 5: Revoke & Delete Certificate */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#7F1D1D" : "#FECACA",
+                    backgroundColor: isDark ? "#450A0A" : "#FEF2F2",
+                  }}
+                  onPress={() => {
+                    if (targetCertForAction) {
+                      setActionModalVisible(false);
+                      handleDeleteCertificate(targetCertForAction);
+                    }
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#EF444422",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#DC2626" }}>
+                      Revoke Certificate
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "#B91C1C", marginTop: 2 }}>
+                      Immediately revoke this credential and remove it from the student's app.
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={{
+                marginTop: 14,
+                paddingVertical: 10,
+                borderRadius: 8,
+                backgroundColor: isDark ? "#334155" : "#E2E8F0",
+                alignItems: "center",
+              }}
+              onPress={() => setActionModalVisible(false)}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>Close</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>

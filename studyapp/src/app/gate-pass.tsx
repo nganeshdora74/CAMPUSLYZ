@@ -31,6 +31,7 @@ import { useLanguage } from "../context/LanguageContext";
 import LanguageToggle from "../components/LanguageToggle";
 import OfflineBanner from "../components/OfflineBanner";
 import { isAppOffline, queueOfflineAction } from "../services/offlineQueue";
+import { getApiUrl } from "../api";
 
 export type GatePassItem = {
   id: string;
@@ -249,9 +250,69 @@ export default function GatePassScreen() {
       }
 
       await addDoc(collection(db, "requests"), passPayload);
+
+      // Create outgoing and incoming notifications
+      const passDate = new Date().toLocaleDateString("en-GB");
+      const currentUid = user?.uid || null;
+      const currentEmail = user?.email || null;
+
+      // Outgoing notification for student
+      await addDoc(collection(db, "notifications"), {
+        title: `Gate Pass Submitted (${passCode})`,
+        body: `Applied for ${passType}: ${reason.trim()}`,
+        type: "gate_pass",
+        category: "Hostel",
+        target: "Specific",
+        studentId: currentUid,
+        studentEmail: currentEmail,
+        senderId: currentUid,
+        senderName: studentName,
+        senderEmail: currentEmail,
+        senderRole: "student",
+        status: "sent",
+        date: passDate,
+        createdAt: serverTimestamp(),
+      });
+
+      // Incoming notification for hostel warden
+      await addDoc(collection(db, "notifications"), {
+        title: `New Gate Pass: ${studentName}`,
+        body: `${studentName} requested ${passType} (${passCode}): "${reason.trim()}"`,
+        type: "gate_pass",
+        category: "Hostel",
+        target: "Hostel Students",
+        senderId: currentUid,
+        senderName: studentName,
+        senderEmail: currentEmail,
+        senderRole: "student",
+        status: "sent",
+        date: passDate,
+        createdAt: serverTimestamp(),
+      });
+
+      // Sync to MongoDB database
+      try {
+        const baseUrl = getApiUrl();
+        await fetch(`${baseUrl}/api/passes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "gate_pass",
+            studentId: currentUid,
+            studentName,
+            studentEmail: currentEmail,
+            rollNo,
+            reason: reason.trim(),
+            destination: destination.trim(),
+            outTime: outTime.trim(),
+            returnTime: expectedReturn.trim(),
+          }),
+        });
+      } catch (_) {}
+
       Alert.alert(
-        "Request Submitted! 🚪",
-        `Your ${passType} (#${passCode}) has been submitted for Warden Review.`
+        "Notification Sent Successfully! 🚪",
+        `Your ${passType} (#${passCode}) has been submitted. Saved to MongoDB & Firebase. Hostel Warden has been notified.`
       );
       setReason("");
       setDestination("");

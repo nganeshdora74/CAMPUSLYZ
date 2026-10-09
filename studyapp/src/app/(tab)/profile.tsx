@@ -64,6 +64,7 @@ import {
   connectStudentToTeacher,
   seedDefaultTeacherCode,
 } from "../../firebase/teacherStudent";
+import { parseNameAndRoleFromEmail } from "../../utils/userEmailParser";
 
 export default function ProfileScreen() {
   const { colors, isDark } = useAppTheme();
@@ -178,7 +179,9 @@ export default function ProfileScreen() {
       return;
     }
 
-    setEmail(user.email || "tdebuggers0@gmail.com");
+    const parsed = parseNameAndRoleFromEmail(user.email);
+    setName(user.displayName || parsed.fullName || "Student");
+    setEmail(user.email || "");
 
     const userRef = doc(db, "users", user.uid);
     const unsubscribe = onSnapshot(
@@ -186,8 +189,8 @@ export default function ProfileScreen() {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          setName(String(data.fullName ?? data.name ?? user.displayName ?? "Tuffan"));
-          setEmail(String(data.email ?? user.email ?? "tdebuggers0@gmail.com"));
+          setName(String(data.fullName ?? data.name ?? user.displayName ?? parsed.fullName ?? "Student"));
+          setEmail(String(data.email ?? user.email ?? ""));
           setRollNo(String(data.rollNo ?? "23CSE001"));
           setDegree(String(data.degree ?? "B.Tech Student"));
           setDepartment(String(data.department ?? "Computer Science & Engineering"));
@@ -207,8 +210,8 @@ export default function ProfileScreen() {
           if (data.lastAttendanceTeacher) setLastAttendanceTeacher(data.lastAttendanceTeacher);
           if (data.connectedTeachers) setConnectedTeachers(data.connectedTeachers);
         } else {
-          setName(user.displayName || "Tuffan");
-          setEmail(user.email || "tdebuggers0@gmail.com");
+          setName(user.displayName || parsed.fullName || "Student");
+          setEmail(user.email || "");
           if (user.photoURL) setPhotoURL(user.photoURL);
         }
         setLoading(false);

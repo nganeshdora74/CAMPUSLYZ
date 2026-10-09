@@ -30,6 +30,7 @@ import {
 import { auth, db } from "../../firebase/config";
 import { useAppTheme } from "../../context/ThemeContext";
 import { useLanguage } from "../../context/LanguageContext";
+import { getDynamicClassStatus } from "../../services/scheduleService";
 
 // Platform timepicker if available
 let DateTimePicker: any = null;
@@ -62,15 +63,28 @@ type SubjectItem = {
   department?: string;
 };
 
-const WEEK_DAYS = [
-  { dayName: "Mon", dateNum: "22" },
-  { dayName: "Tue", dateNum: "23" },
-  { dayName: "Wed", dateNum: "24" },
-  { dayName: "Thu", dateNum: "25" },
-  { dayName: "Fri", dateNum: "26" },
-  { dayName: "Sat", dateNum: "27" },
-  { dayName: "Sun", dateNum: "28" },
-];
+export const getDynamicWeekDays = () => {
+  const now = new Date();
+  const dayIndex = now.getDay();
+  const monday = new Date(now);
+  const diff = (dayIndex === 0 ? -6 : 1) - dayIndex;
+  monday.setDate(now.getDate() + diff);
+
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return days.map((dayName, idx) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + idx);
+    return {
+      dayName,
+      dateNum: String(d.getDate()).padStart(2, "0"),
+    };
+  });
+};
+
+export const getTodayAbbreviation = () => {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return days[new Date().getDay()];
+};
 
 const MODAL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -184,7 +198,19 @@ export default function ScheduleScreen() {
 
   const [userInitial, setUserInitial] = useState("S");
   const [isAdminOrTeacher, setIsAdminOrTeacher] = useState(false);
-  const [selectedDay, setSelectedDay] = useState("Tue");
+  const [userRole, setUserRole] = useState<"student" | "teacher" | "admin">("student");
+  const [weekDays, setWeekDays] = useState(getDynamicWeekDays());
+  const [selectedDay, setSelectedDay] = useState(getTodayAbbreviation());
+  const [timeTick, setTimeTick] = useState(Date.now());
+
+  // Dynamic 30-second interval to update ongoing/upcoming/completed statuses in real-time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(Date.now());
+      setWeekDays(getDynamicWeekDays());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Schedule list from Firestore (Shared collection created and managed by Admin/Teachers)
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -208,8 +234,12 @@ export default function ScheduleScreen() {
         setUserInitial(rawName.trim().charAt(0).toUpperCase() || "S");
 
         const role = (data.role || "").toLowerCase();
-        if (role === "admin" || role === "teacher" || email.includes("admin") || email.includes("teacher")) {
+        if (role === "admin" || email.includes("admin")) {
           setIsAdminOrTeacher(true);
+          setUserRole("admin");
+        } else if (role === "teacher" || email.includes("teacher")) {
+          setIsAdminOrTeacher(true);
+          setUserRole("teacher");
         }
       },
       (err) => console.log("User snapshot error:", err.message)
@@ -262,9 +292,7 @@ export default function ScheduleScreen() {
             const eTime = data.endTime || (data.time?.split("-")[1]?.trim()) || "10:00 AM";
             const formattedRange = data.timeRange || `${sTime}\n– ${eTime}`;
 
-            let st: "Completed" | "Ongoing" | "Upcoming" = "Upcoming";
-            if (data.status === "Completed") st = "Completed";
-            else if (data.status === "Ongoing") st = "Ongoing";
+            const st = getDynamicClassStatus(data.day || "Mon", sTime, eTime);
 
             return {
               id: d.id,
@@ -373,26 +401,36 @@ export default function ScheduleScreen() {
     return Array.from(map.values()).sort((a, b) => a.subject.localeCompare(b.subject));
   }, [subjects, classes]);
 
-  // Filter classes by active day and optional subject filter
+  // Filter classes by active day and optional subject filter with dynamic real-time status calculation
   const filteredTodayClasses = useMemo(() => {
-    return classes.filter((c) => {
-      const matchDay = c.day === selectedDay;
-      const matchSub =
-        !selectedSubjectFilter || c.subject.toLowerCase() === selectedSubjectFilter.toLowerCase();
-      return matchDay && matchSub;
-    });
-  }, [classes, selectedDay, selectedSubjectFilter]);
+    return classes
+      .filter((c) => {
+        const matchDay = c.day === selectedDay;
+        const matchSub =
+          !selectedSubjectFilter || c.subject.toLowerCase() === selectedSubjectFilter.toLowerCase();
+        return matchDay && matchSub;
+      })
+      .map((c) => ({
+        ...c,
+        status: getDynamicClassStatus(c.day, c.startTime, c.endTime),
+      }));
+  }, [classes, selectedDay, selectedSubjectFilter, timeTick]);
 
   // Next day classes
   const nextDayName = useMemo(() => {
-    const idx = WEEK_DAYS.findIndex((d) => d.dayName === selectedDay);
-    const nextIdx = (idx + 1) % WEEK_DAYS.length;
-    return WEEK_DAYS[nextIdx].dayName;
-  }, [selectedDay]);
+    const idx = weekDays.findIndex((d) => d.dayName === selectedDay);
+    const nextIdx = (idx + 1) % weekDays.length;
+    return weekDays[nextIdx].dayName;
+  }, [selectedDay, weekDays]);
 
   const filteredTomorrowClasses = useMemo(() => {
-    return classes.filter((c) => c.day === nextDayName);
-  }, [classes, nextDayName]);
+    return classes
+      .filter((c) => c.day === nextDayName)
+      .map((c) => ({
+        ...c,
+        status: getDynamicClassStatus(c.day, c.startTime, c.endTime),
+      }));
+  }, [classes, nextDayName, timeTick]);
 
   // Optional status view / student personal completion toggle
   const handleCycleStatus = async (item: ClassItem) => {
@@ -485,7 +523,7 @@ export default function ScheduleScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.weekCarouselContent}
           >
-            {WEEK_DAYS.map((item) => {
+            {weekDays.map((item) => {
               const isActive = selectedDay === item.dayName;
               return (
                 <TouchableOpacity
@@ -648,12 +686,12 @@ export default function ScheduleScreen() {
           {isAdminOrTeacher ? (
             <TouchableOpacity
               style={[styles.manageScheduleBtn, { backgroundColor: colors.primaryLight }]}
-              onPress={() => router.push("/admin/schedule")}
+              onPress={() => router.push(userRole === "teacher" ? "/teacher/schedule" : "/admin/schedule")}
               activeOpacity={0.8}
             >
               <Ionicons name="create-outline" size={16} color={colors.primary} />
               <Text style={[styles.manageScheduleBtnText, { color: colors.primary }]}>
-                Edit Schedule
+                {userRole === "teacher" ? "Manage Classes" : "Edit Schedule"}
               </Text>
             </TouchableOpacity>
           ) : (

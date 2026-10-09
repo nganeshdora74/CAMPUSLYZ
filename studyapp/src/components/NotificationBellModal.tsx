@@ -15,7 +15,7 @@ import { auth, db } from "../firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import {
   CampusNotification,
-  listenUserNotifications,
+  listenUserNotificationsWithDirection,
   markNotificationAsRead,
 } from "../services/notificationService";
 
@@ -29,7 +29,10 @@ export default function NotificationBellModal({
   badgeBgColor = "#EF4444",
 }: Props) {
   const [modalVisible, setModalVisible] = useState(false);
-  const [notifications, setNotifications] = useState<CampusNotification[]>([]);
+  const [activeTab, setActiveTab] = useState<"all" | "incoming" | "outgoing">("all");
+  const [incomingList, setIncomingList] = useState<CampusNotification[]>([]);
+  const [outgoingList, setOutgoingList] = useState<CampusNotification[]>([]);
+  const [allList, setAllList] = useState<CampusNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isHostelResident, setIsHostelResident] = useState(false);
 
@@ -53,15 +56,18 @@ export default function NotificationBellModal({
     checkHostel();
   }, [currentUser]);
 
-  // Listen to notifications
+  // Real-time listener partitioned by Coming (Incoming) and Going (Outgoing)
   useEffect(() => {
-    const unsub = listenUserNotifications(
+    const unsub = listenUserNotificationsWithDirection(
       currentUser?.uid || null,
       currentUser?.email || null,
       isHostelResident,
-      (list) => {
-        setNotifications(list);
-        const unread = list.filter(
+      ({ incoming, outgoing, all }) => {
+        setIncomingList(incoming);
+        setOutgoingList(outgoing);
+        setAllList(all);
+
+        const unread = incoming.filter(
           (n) => !n.readBy || !n.readBy.includes(userIdentifier)
         ).length;
         setUnreadCount(unread);
@@ -73,8 +79,8 @@ export default function NotificationBellModal({
 
   const handleOpenModal = () => {
     setModalVisible(true);
-    // Mark top notifications as read for this user
-    notifications.forEach((n) => {
+    // Mark top incoming notifications as read
+    incomingList.forEach((n) => {
       if (!n.readBy || !n.readBy.includes(userIdentifier)) {
         markNotificationAsRead(n.id, userIdentifier);
       }
@@ -85,15 +91,17 @@ export default function NotificationBellModal({
   const handleNotificationPress = (notif: CampusNotification) => {
     setModalVisible(false);
     if (notif.type === "certificate") {
-      router.push("/certificate");
+      router.push("/certificate" as any);
     } else if (notif.type === "fee") {
-      router.push("/fees");
+      router.push("/fees" as any);
     } else if (notif.type === "hostel") {
-      router.push("/hostel");
+      router.push("/hostel" as any);
     } else if (notif.type === "mess") {
-      router.push("/mess");
+      router.push("/mess" as any);
+    } else if (notif.type === "leave" || notif.type === "gate_pass") {
+      router.push("/leave-gatepass" as any);
     } else {
-      router.push("/notices");
+      router.push("/notices" as any);
     }
   };
 
@@ -107,10 +115,20 @@ export default function NotificationBellModal({
         return { icon: "home-outline" as const, color: "#0284C7", bg: "#E0F2FE" };
       case "mess":
         return { icon: "restaurant-outline" as const, color: "#EA580C", bg: "#FFF7ED" };
+      case "leave":
+      case "gate_pass":
+        return { icon: "document-text-outline" as const, color: "#D97706", bg: "#FEF3C7" };
       default:
         return { icon: "megaphone-outline" as const, color: "#2563EB", bg: "#EFF6FF" };
     }
   };
+
+  const displayedList =
+    activeTab === "incoming"
+      ? incomingList
+      : activeTab === "outgoing"
+      ? outgoingList
+      : allList;
 
   return (
     <>
@@ -137,38 +155,80 @@ export default function NotificationBellModal({
       >
         <Pressable style={styles.overlay} onPress={() => setModalVisible(false)}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerTitleRow}>
-                <Ionicons name="notifications" size={18} color="#2563EB" />
+                <Ionicons name="notifications" size={20} color="#2563EB" />
                 <Text style={styles.title}>Notifications</Text>
-                <View style={styles.countPill}>
-                  <Text style={styles.countPillText}>{notifications.length}</Text>
-                </View>
               </View>
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
                 style={styles.closeBtn}
               >
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
+            {/* Segmented Control / Tabs: All | Coming | Going */}
+            <View style={styles.tabBar}>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === "all" && styles.tabItemActive]}
+                onPress={() => setActiveTab("all")}
+              >
+                <Text style={[styles.tabText, activeTab === "all" && styles.tabTextActive]}>
+                  All ({allList.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === "incoming" && styles.tabItemActive]}
+                onPress={() => setActiveTab("incoming")}
+              >
+                <Text style={[styles.tabText, activeTab === "incoming" && styles.tabTextActive]}>
+                  📥 Coming ({incomingList.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === "outgoing" && styles.tabItemActive]}
+                onPress={() => setActiveTab("outgoing")}
+              >
+                <Text style={[styles.tabText, activeTab === "outgoing" && styles.tabTextActive]}>
+                  📤 Going ({outgoingList.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* List */}
             <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-              {notifications.length === 0 ? (
+              {displayedList.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="notifications-off-outline" size={40} color="#94A3B8" />
-                  <Text style={styles.emptyTitle}>No Notifications Yet</Text>
+                  <Ionicons name="notifications-off-outline" size={42} color="#94A3B8" />
+                  <Text style={styles.emptyTitle}>
+                    {activeTab === "outgoing"
+                      ? "No Outgoing Notifications"
+                      : activeTab === "incoming"
+                      ? "No Incoming Notifications"
+                      : "No Notifications Yet"}
+                  </Text>
                   <Text style={styles.emptySub}>
-                    You're all caught up! New notices and certificates will show up here.
+                    {activeTab === "outgoing"
+                      ? "Notices, leave applications, or gate pass requests you send will appear here."
+                      : "Notices, pass approvals, fee reminders & announcements will appear here."}
                   </Text>
                 </View>
               ) : (
-                notifications.map((n) => {
+                displayedList.map((n) => {
                   const styleInfo = getIconForType(n.type);
+                  const isSent = n.isOutgoing;
+
                   return (
                     <TouchableOpacity
                       key={n.id}
-                      style={styles.notifCard}
+                      style={[
+                        styles.notifCard,
+                        isSent && styles.notifCardOutgoing,
+                      ]}
                       onPress={() => handleNotificationPress(n)}
                       activeOpacity={0.75}
                     >
@@ -186,20 +246,43 @@ export default function NotificationBellModal({
                       </View>
 
                       <View style={styles.notifInfo}>
-                        <View style={styles.titleRow}>
-                          <Text style={styles.notifTitle} numberOfLines={1}>
-                            {n.title}
-                          </Text>
-                          <Text style={styles.notifDate}>{n.date}</Text>
+                        {/* Status / Delivery Badge */}
+                        <View style={styles.badgeRow}>
+                          {isSent ? (
+                            <View style={styles.goingBadge}>
+                              <Ionicons name="checkmark-done" size={11} color="#059669" />
+                              <Text style={styles.goingBadgeText}>
+                                Notification Successful (Sent)
+                              </Text>
+                            </View>
+                          ) : (
+                            <View style={styles.comingBadge}>
+                              <Ionicons name="arrow-down" size={11} color="#2563EB" />
+                              <Text style={styles.comingBadgeText}>Received</Text>
+                            </View>
+                          )}
+                          <Text style={styles.notifDate}>{n.date || "Today"}</Text>
                         </View>
+
+                        <Text style={styles.notifTitle} numberOfLines={1}>
+                          {n.title}
+                        </Text>
                         <Text style={styles.notifBody} numberOfLines={2}>
                           {n.body}
                         </Text>
-                        {n.target === "Hostel Students" && (
-                          <View style={styles.hostelTag}>
-                            <Text style={styles.hostelTagText}>🏨 Hostel Only</Text>
-                          </View>
-                        )}
+
+                        {/* Metadata row */}
+                        <View style={styles.metaRow}>
+                          {isSent ? (
+                            <Text style={styles.metaSender}>
+                              🎯 Target: {n.targetHostel ? `Hostel ${n.targetHostel}` : n.target || n.studentEmail || "All"}
+                            </Text>
+                          ) : (
+                            <Text style={styles.metaSender}>
+                              👤 From: {n.senderName || "Administration"}
+                            </Text>
+                          )}
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -240,15 +323,15 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   sheet: {
     width: "100%",
-    maxWidth: 460,
-    maxHeight: "80%",
+    maxWidth: 480,
+    maxHeight: "82%",
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 18,
@@ -262,7 +345,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingBottom: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
@@ -272,26 +355,45 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "800",
     color: "#0F172A",
-  },
-  countPill: {
-    backgroundColor: "#EFF6FF",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  countPillText: {
-    color: "#2563EB",
-    fontSize: 11,
-    fontWeight: "700",
   },
   closeBtn: {
     padding: 4,
   },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    padding: 3,
+    marginVertical: 12,
+    gap: 4,
+  },
+  tabItem: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: "center",
+    borderRadius: 9,
+  },
+  tabItemActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  tabTextActive: {
+    color: "#2563EB",
+    fontWeight: "700",
+  },
   list: {
-    marginTop: 10,
+    marginTop: 2,
   },
   emptyState: {
     alignItems: "center",
@@ -313,18 +415,22 @@ const styles = StyleSheet.create({
   },
   notifCard: {
     flexDirection: "row",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    marginBottom: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginBottom: 8,
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
     borderColor: "#EEF2F6",
     gap: 12,
   },
+  notifCardOutgoing: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#DCFCE7",
+  },
   iconBox: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
@@ -332,39 +438,65 @@ const styles = StyleSheet.create({
   notifInfo: {
     flex: 1,
   },
-  titleRow: {
+  badgeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 2,
+    marginBottom: 4,
+  },
+  goingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  goingBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  comingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  comingBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#2563EB",
   },
   notifTitle: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: "700",
     color: "#0F172A",
-    flex: 1,
+    marginBottom: 2,
   },
   notifDate: {
     fontSize: 10,
     color: "#94A3B8",
-    marginLeft: 6,
   },
   notifBody: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: "#475569",
-    lineHeight: 15,
+    lineHeight: 16,
+    marginBottom: 4,
   },
-  hostelTag: {
-    alignSelf: "flex-start",
-    backgroundColor: "#DCFCE7",
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-    marginTop: 4,
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
   },
-  hostelTagText: {
-    fontSize: 9.5,
-    fontWeight: "700",
-    color: "#15803D",
+  metaSender: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    color: "#64748B",
   },
 });

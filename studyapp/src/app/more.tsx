@@ -19,6 +19,12 @@ type Module = {
 
 const campusModules: Module[] = [
   {
+    title: "Notifications Feed",
+    description: "Incoming announcements & outgoing sent notifications",
+    icon: "notifications-outline",
+    route: "/notifications",
+  },
+  {
     title: "Attendance",
     description: "Attendance, subjects and warnings",
     icon: "school-outline",

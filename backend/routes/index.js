@@ -21,6 +21,11 @@ const chatRoutes = require("./chatRoutes");
 const adminRoutes = require("./adminRoutes");
 const translateRoutes = require("./translateRoutes");
 const attendanceRoutes = require("./attendanceRoutes");
+const notificationRoutes = require("./notificationRoutes");
+const passRoutes = require("./passRoutes");
+const feeRoutes = require("./feeRoutes");
+const hostelRoutes = require("./hostelRoutes");
+const messRoutes = require("./messRoutes");
 
 // Health check
 router.get("/health", (req, res) => {
@@ -51,5 +56,10 @@ router.use("/chat", chatRoutes);
 router.use("/admin", adminRoutes);
 router.use("/translate", translateRoutes);
 router.use("/attendance", attendanceRoutes);
+router.use("/notifications", notificationRoutes);
+router.use("/passes", passRoutes);
+router.use("/fees", feeRoutes);
+router.use("/hostel", hostelRoutes);
+router.use("/mess", messRoutes);
 
 module.exports = router;

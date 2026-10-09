@@ -64,6 +64,7 @@ const DEFAULT_TEACHER_CODE: TeacherCode = {
  * Ensures default teacher code exists so students and teachers can test immediately.
  */
 export async function seedDefaultTeacherCode(): Promise<void> {
+  if (!auth.currentUser) return;
   try {
     const docRef = doc(db, "teacherCodes", "TEACH-CSE-101");
     const snapshot = await getDoc(docRef);
@@ -75,7 +76,9 @@ export async function seedDefaultTeacherCode(): Promise<void> {
       console.log("Seeded default teacher code: TEACH-CSE-101 (pass: 123)");
     }
   } catch (err: any) {
-    console.warn("Could not seed default teacher code:", err?.message);
+    if (err?.code !== "permission-denied" && err?.code !== "unavailable") {
+      console.warn("Could not seed default teacher code:", err?.message);
+    }
   }
 }
 
@@ -558,15 +561,15 @@ export async function seedCampusCommunityChat(): Promise<void> {
 
 export interface AttendanceSyncRecord {
   studentUid: string;
-  studentName: string;
-  rollNo: string;
+  studentName?: string;
+  rollNo?: string;
   subject: string;
-  department: string;
-  section: string;
+  department?: string;
+  section?: string;
   date: string;
   status: "Present" | "Absent" | "Late";
-  remarks: string;
-  markedBy: string;
+  remarks?: string;
+  markedBy?: string;
   markedByRole?: "teacher" | "admin";
 }
 

@@ -38,6 +38,7 @@ import {
   listenBranches,
   SubjectItem,
 } from "../../services/curriculumService";
+import { getDynamicClassStatus } from "../../services/scheduleService";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS
@@ -388,9 +389,11 @@ export default function AdminScheduleScreen() {
             const formattedRange = data.timeRange || `${sTime}\n– ${eTime}`;
 
             let st: "Completed" | "Ongoing" | "Upcoming" | "Cancelled" = "Upcoming";
-            if (data.status === "Completed") st = "Completed";
-            else if (data.status === "Ongoing") st = "Ongoing";
-            else if (data.status === "Cancelled") st = "Cancelled";
+            if (data.status === "Cancelled") {
+              st = "Cancelled";
+            } else {
+              st = getDynamicClassStatus(data.day || "Mon", sTime, eTime);
+            }
 
             return {
               id: d.id,

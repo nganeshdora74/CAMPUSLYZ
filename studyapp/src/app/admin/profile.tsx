@@ -48,6 +48,7 @@ import {
   sendTeacherStudentMessage,
 } from "../../firebase/teacherStudent";
 import { pickPdfDocument, uploadSpecialNoteFile } from "../../services/certificatePdfService";
+import { parseNameAndRoleFromEmail } from "../../utils/userEmailParser";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS
@@ -221,8 +222,10 @@ export default function AdminProfileScreen() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
+        const parsed = parseNameAndRoleFromEmail(user.email);
         if (user.email) setEmail(user.email);
         if (user.displayName) setFullName(user.displayName);
+        else if (parsed.fullName) setFullName(parsed.fullName);
         if (user.photoURL) setAvatar(user.photoURL);
 
         // Load profile from Firestore

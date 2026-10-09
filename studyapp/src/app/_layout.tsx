@@ -50,6 +50,7 @@ export default function RootLayout() {
       <Stack.Screen name="hostel" />
       <Stack.Screen name="mess" />
       <Stack.Screen name="notices" />
+      <Stack.Screen name="notifications" />
       <Stack.Screen name="reports" />
       <Stack.Screen name="attendance" />
       <Stack.Screen name="cgpa-calculator" />

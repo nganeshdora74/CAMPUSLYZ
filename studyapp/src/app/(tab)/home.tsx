@@ -26,8 +26,11 @@ import { auth, db } from "../../firebase/config";
 import { useAppTheme } from "../../context/ThemeContext";
 import { useLanguage } from "../../context/LanguageContext";
 import LanguageToggle from "../../components/LanguageToggle";
+import UniversalRoleControls from "../../components/UniversalRoleControls";
 import OfflineBanner from "../../components/OfflineBanner";
 import NotificationBellModal from "../../components/NotificationBellModal";
+import { parseNameAndRoleFromEmail } from "../../utils/userEmailParser";
+import { subscribeMessMenu } from "../../services/messUnifiedService";
 
 type QuickAccessItem = {
   id: string;
@@ -248,6 +251,11 @@ export default function HomeScreen() {
   const [studyMinutes, setStudyMinutes] = useState(0);
   const [studyTarget, setStudyTarget] = useState(120);
   const [cgpa, setCgpa] = useState("8.2 / 10");
+  const [feeStatus, setFeeStatus] = useState<string>("Paid");
+  const [remainingFees, setRemainingFees] = useState<number>(0);
+  const [hostelRoom, setHostelRoom] = useState<string>("A-204");
+  const [hostelBlock, setHostelBlock] = useState<string>("Block A");
+  const [messSpecialNote, setMessSpecialNote] = useState<string>("");
 
   const [scheduleList, setScheduleList] = useState<ScheduleClass[]>(DEFAULT_SCHEDULE);
   const [noticesList, setNoticesList] = useState<RecentNotice[]>(DEFAULT_NOTICES);
@@ -265,33 +273,72 @@ export default function HomeScreen() {
   }, []);
 
   // ======================================================
-  // LOAD USER PROFILE DATA
+  // LOAD USER PROFILE DATA & LIVE MANAGER SYNC
   // ======================================================
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) {
-      setUserName("Tuffan");
-      setUserInitial("T");
+      setUserName("Student");
+      setUserInitial("S");
       return;
     }
 
+    const parsed = parseNameAndRoleFromEmail(user.email);
+    const initialName = user.displayName || parsed.fullName || "Student";
+    setUserName(initialName);
+    setUserInitial(initialName.trim().charAt(0).toUpperCase() || "S");
+
+    // 1. Direct user doc listener (Fees Manager, Notice Manager, Admin, Teacher updates)
     const userRef = doc(db, "users", user.uid);
-    const unsubscribe = onSnapshot(
+    const unsubscribeUser = onSnapshot(
       userRef,
       (snapshot) => {
         if (!snapshot.exists()) return;
         const data = snapshot.data();
-        const rawName = data.fullName || data.name || user.displayName || "Tuffan";
+        const rawName = data.fullName || user.displayName || parsed.fullName || "Student";
         setUserName(rawName);
-        setUserInitial(rawName.trim().charAt(0).toUpperCase() || "T");
+        setUserInitial(rawName.trim().charAt(0).toUpperCase() || "S");
         if (data.cgpa) {
           setCgpa(`${data.cgpa} / 10`);
         }
+        // Direct realtime sync from Fee Manager
+        if (data.feeStatus) setFeeStatus(data.feeStatus);
+        if (data.remainingFees !== undefined) setRemainingFees(Number(data.remainingFees));
+        else if (data.dueFee !== undefined) setRemainingFees(Number(data.dueFee));
+        // Direct realtime sync from Notice / Hostel Manager
+        if (data.roomNo) setHostelRoom(data.roomNo);
+        if (data.hostelBlock) setHostelBlock(data.hostelBlock);
       },
       (err) => console.log("User doc listener:", err.message)
     );
 
-    return unsubscribe;
+    // 2. Direct realtime sync from Hostel Allocation subcollection
+    const hostelAllocRef = doc(db, "users", user.uid, "hostel", "allocation");
+    const unsubHostel = onSnapshot(
+      hostelAllocRef,
+      (hSnap) => {
+        if (hSnap.exists()) {
+          const h = hSnap.data();
+          if (h.roomNo) setHostelRoom(h.roomNo);
+          if (h.blockName) setHostelBlock(h.blockName);
+        }
+      },
+      (hErr) => console.log("Hostel allocation sub listener:", hErr.message)
+    );
+
+    // 3. Direct realtime sync from Mess Manager
+    const unsubMess = subscribeMessMenu((mMenu) => {
+      if (mMenu.specialNote) {
+        const noteStr = typeof mMenu.specialNote === "string" ? mMenu.specialNote : (mMenu.specialNote as any)?.note || "";
+        setMessSpecialNote(noteStr);
+      }
+    });
+
+    return () => {
+      unsubscribeUser();
+      unsubHostel();
+      unsubMess();
+    };
   }, []);
 
   // ======================================================
@@ -517,7 +564,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerRightRow}>
-          <LanguageToggle />
+          <UniversalRoleControls compact />
 
           <TouchableOpacity
             style={[
@@ -600,6 +647,153 @@ export default function HomeScreen() {
               <Ionicons name="leaf" size={14} color="#86EFAC" />
               <View style={styles.plantPot} />
             </View>
+          </View>
+        </View>
+
+        {/* ================================================== */}
+        {/* REALTIME MANAGER SYNC HUB */}
+        {/* ================================================== */}
+        <View style={styles.syncHubContainer}>
+          <View style={styles.syncHubHeader}>
+            <View style={styles.syncPulseDot} />
+            <Text style={[styles.syncHubTitle, { color: colors.text }]}>
+              LIVE CAMPUS SYNC
+            </Text>
+            <Text style={[styles.syncHubSub, { color: colors.textSecondary }]}>
+              Realtime updates from Fees, Hostel, Mess & Teachers
+            </Text>
+          </View>
+
+          <View style={styles.syncGrid}>
+            {/* 1. FEES MANAGER STATUS */}
+            <TouchableOpacity
+              style={[
+                styles.syncCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => navigateTo("/fees")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.syncCardTop}>
+                <View style={[styles.syncIconBox, { backgroundColor: "#EDE9FE" }]}>
+                  <Ionicons name="wallet-outline" size={15} color="#7C3AED" />
+                </View>
+                <View
+                  style={[
+                    styles.syncBadge,
+                    {
+                      backgroundColor:
+                        feeStatus === "Paid" || remainingFees === 0
+                          ? "#DCFCE7"
+                          : "#FEE2E2",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.syncBadgeText,
+                      {
+                        color:
+                          feeStatus === "Paid" || remainingFees === 0
+                            ? "#16A34A"
+                            : "#EF4444",
+                      },
+                    ]}
+                  >
+                    {feeStatus === "Paid" || remainingFees === 0
+                      ? "Cleared"
+                      : `₹${remainingFees.toLocaleString("en-IN")} Due`}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.syncCardLabel, { color: colors.textSecondary }]}>
+                Fees Manager
+              </Text>
+              <Text style={[styles.syncCardValue, { color: colors.text }]} numberOfLines={1}>
+                {feeStatus === "Paid" || remainingFees === 0 ? "No Pending Dues" : "Installment Pending"}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 2. HOSTEL MANAGER STATUS */}
+            <TouchableOpacity
+              style={[
+                styles.syncCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => navigateTo("/hostel")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.syncCardTop}>
+                <View style={[styles.syncIconBox, { backgroundColor: "#E0F2FE" }]}>
+                  <Ionicons name="business-outline" size={15} color="#0284C7" />
+                </View>
+                <View style={[styles.syncBadge, { backgroundColor: "#E0F2FE" }]}>
+                  <Text style={[styles.syncBadgeText, { color: "#0284C7" }]}>
+                    Room {hostelRoom}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.syncCardLabel, { color: colors.textSecondary }]}>
+                Hostel / Notice
+              </Text>
+              <Text style={[styles.syncCardValue, { color: colors.text }]} numberOfLines={1}>
+                {hostelBlock || "Block A"} • Allocated
+              </Text>
+            </TouchableOpacity>
+
+            {/* 3. MESS MANAGER STATUS */}
+            <TouchableOpacity
+              style={[
+                styles.syncCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => navigateTo("/mess")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.syncCardTop}>
+                <View style={[styles.syncIconBox, { backgroundColor: "#DCFCE7" }]}>
+                  <Ionicons name="restaurant-outline" size={15} color="#16A34A" />
+                </View>
+                <View style={[styles.syncBadge, { backgroundColor: "#FEF3C7" }]}>
+                  <Text style={[styles.syncBadgeText, { color: "#D97706" }]}>
+                    Active
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.syncCardLabel, { color: colors.textSecondary }]}>
+                Mess Manager
+              </Text>
+              <Text style={[styles.syncCardValue, { color: colors.text }]} numberOfLines={1}>
+                {messSpecialNote || "Kitchen Menu Synced"}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 4. TEACHER ATTENDANCE */}
+            <TouchableOpacity
+              style={[
+                styles.syncCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => navigateTo("/attendence")}
+              activeOpacity={0.8}
+            >
+              <View style={styles.syncCardTop}>
+                <View style={[styles.syncIconBox, { backgroundColor: "#EFF6FF" }]}>
+                  <Ionicons name="checkbox-outline" size={15} color="#2563EB" />
+                </View>
+                <View style={[styles.syncBadge, { backgroundColor: "#EFF6FF" }]}>
+                  <Text style={[styles.syncBadgeText, { color: "#2563EB" }]}>
+                    {attendancePercentage}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.syncCardLabel, { color: colors.textSecondary }]}>
+                Teacher Attendance
+              </Text>
+              <Text style={[styles.syncCardValue, { color: colors.text }]} numberOfLines={1}>
+                Official Faculty Log
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -1456,5 +1650,83 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.2,
+  },
+
+  /* REALTIME MANAGER SYNC HUB */
+  syncHubContainer: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  syncHubHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  syncPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#10B981",
+  },
+  syncHubTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  syncHubSub: {
+    fontSize: 10,
+    fontWeight: "500",
+    flex: 1,
+    marginLeft: 4,
+  },
+  syncGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  syncCard: {
+    flex: 1,
+    minWidth: "47%",
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  syncCardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  syncIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  syncBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  syncBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  syncCardLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  syncCardValue: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

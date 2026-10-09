@@ -76,7 +76,7 @@ export default function StudyScreen() {
 
           <Pressable
             style={styles.card}
-            onPress={() => router.push("/notes" as any)}
+            onPress={() => router.push("/resources" as any)}
           >
             <View style={styles.iconBox}>
               <Text style={styles.icon}>📖</Text>
@@ -85,7 +85,7 @@ export default function StudyScreen() {
             <Text style={styles.cardTitle}>Resources</Text>
 
             <Text style={styles.cardText}>
-              Useful books, PDFs and study material
+              Useful books, PDFs, videos and study material
             </Text>
           </Pressable>
 

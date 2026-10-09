@@ -427,13 +427,24 @@ export async function uriToBlob(uri: string): Promise<Blob> {
  */
 export async function uploadCertificateFile(
   uri: string,
-  type: "photo" | "pdf",
-  credentialId: string
+  typeOrFilename: "photo" | "pdf" | string,
+  credentialIdOrMime?: string
 ): Promise<string> {
   // If already an HTTP / HTTPS URL, no need to upload
   if (uri.startsWith("http://") || uri.startsWith("https://")) {
     return uri;
   }
+
+  const isPdf =
+    typeOrFilename === "pdf" ||
+    (typeof typeOrFilename === "string" && typeOrFilename.toLowerCase().endsWith(".pdf")) ||
+    (typeof credentialIdOrMime === "string" && credentialIdOrMime.includes("pdf"));
+
+  const type: "photo" | "pdf" = isPdf ? "pdf" : "photo";
+  const credentialId =
+    typeOrFilename !== "photo" && typeOrFilename !== "pdf"
+      ? typeOrFilename.replace(/[^a-zA-Z0-9_-]/g, "_")
+      : credentialIdOrMime || "cert";
 
   try {
     const blob = await uriToBlob(uri);

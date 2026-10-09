@@ -16,6 +16,10 @@ const Complaint = require("./Complaint");
 const { Video, SavedVideo } = require("./Video");
 const { Note, SavedNote } = require("./Note");
 const Attendance = require("./Attendance");
+const Notification = require("./Notification");
+const PassRequest = require("./PassRequest");
+const FeeRecord = require("./FeeRecord");
+const { MessMenu, MessInventory } = require("./MessRecord");
 
 module.exports = {
   User,
@@ -38,4 +42,9 @@ module.exports = {
   SavedVideo,
   Note,
   SavedNote,
+  Notification,
+  PassRequest,
+  FeeRecord,
+  MessMenu,
+  MessInventory,
 };

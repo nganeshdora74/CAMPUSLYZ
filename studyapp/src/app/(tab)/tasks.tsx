@@ -33,6 +33,12 @@ import { useAppTheme } from "../../context/ThemeContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { useSubjects } from "../../hooks/useSubjects";
 import { ClockTimePicker } from "../../components/ClockTimePicker";
+import {
+  AssignmentItem,
+  subscribeAssignments,
+  toggleStudentAssignmentCompletion,
+} from "../../services/assignmentService";
+import { shareOrDownloadPdf } from "../../services/certificatePdfService";
 
 type TaskFilter = "All" | "To Do" | "In Progress" | "Completed";
 
@@ -168,10 +174,64 @@ export default function TasksScreen() {
   const [newTaskSubtasks, setNewTaskSubtasks] = useState("1");
   const [saving, setSaving] = useState(false);
 
-  // Time Picker Modal
+  // Section toggle: Course Assignments (Faculty) vs Personal Tasks
+  const [activeSection, setActiveSection] = useState<"assignments" | "tasks">("assignments");
+  const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(true);
+  const [assignmentFilter, setAssignmentFilter] = useState<"All" | "Pending" | "Completed">("All");
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+
+  // Real-time listener for Course Assignments
+  useEffect(() => {
+    const unsub = subscribeAssignments((list) => {
+      setAssignments(list);
+      setLoadingAssignments(false);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleToggleAssignment = async (item: AssignmentItem) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert("Login Required", "Please log in to track assignment completion.");
+      return;
+    }
+    try {
+      await toggleStudentAssignmentCompletion(item.id, uid);
+    } catch (e: any) {
+      console.warn("Toggle assignment completion error:", e);
+    }
+  };
+
+  // Clock picker & subject filter for personal tasks
   const [clockPickerVisible, setClockPickerVisible] = useState(false);
   const [clockPickerTarget, setClockPickerTarget] = useState<"start" | "end">("start");
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState("All");
+
+  const currentUid = auth.currentUser?.uid || "";
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter((item) => {
+      const isCompleted = item.completedStudents?.includes(currentUid) || false;
+      if (assignmentFilter === "Pending" && isCompleted) return false;
+      if (assignmentFilter === "Completed" && !isCompleted) return false;
+      const q = assignmentSearch.toLowerCase().trim();
+      if (q) {
+        const matchTitle = item.title.toLowerCase().includes(q);
+        const matchSub = item.subject.toLowerCase().includes(q);
+        const matchDesc = (item.description || "").toLowerCase().includes(q);
+        if (!matchTitle && !matchSub && !matchDesc) return false;
+      }
+      return true;
+    });
+  }, [assignments, assignmentFilter, assignmentSearch, currentUid]);
+
+  const assignmentPendingCount = useMemo(() => {
+    return assignments.filter((a) => !a.completedStudents?.includes(currentUid)).length;
+  }, [assignments, currentUid]);
+
+  const assignmentCompletedCount = useMemo(() => {
+    return assignments.filter((a) => a.completedStudents?.includes(currentUid)).length;
+  }, [assignments, currentUid]);
 
   // Load user
   useEffect(() => {
@@ -552,6 +612,294 @@ export default function TasksScreen() {
         </View>
 
         {/* ================================================== */}
+        {/* SECTION TOGGLE: COURSE ASSIGNMENTS vs PERSONAL TASKS */}
+        {/* ================================================== */}
+        <View style={styles.sectionToggleRow}>
+          <TouchableOpacity
+            style={[
+              styles.sectionToggleBtn,
+              activeSection === "assignments" && styles.sectionToggleBtnActive,
+              { borderColor: colors.border },
+            ]}
+            onPress={() => setActiveSection("assignments")}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="document-text"
+              size={15}
+              color={activeSection === "assignments" ? "#FFFFFF" : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.sectionToggleBtnText,
+                activeSection === "assignments" && styles.sectionToggleBtnTextActive,
+              ]}
+            >
+              Course Assignments ({assignments.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.sectionToggleBtn,
+              activeSection === "tasks" && styles.sectionToggleBtnActive,
+              { borderColor: colors.border },
+            ]}
+            onPress={() => setActiveSection("tasks")}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="checkbox-outline"
+              size={15}
+              color={activeSection === "tasks" ? "#FFFFFF" : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.sectionToggleBtnText,
+                activeSection === "tasks" && styles.sectionToggleBtnTextActive,
+              ]}
+            >
+              My Tasks ({taskList.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeSection === "assignments" ? (
+          /* ================================================== */
+          /* 1. COURSE ASSIGNMENTS STREAM (FACULTY ASSIGNMENTS) */
+          /* ================================================== */
+          <View style={{ paddingHorizontal: 16 }}>
+            {/* Filter Pills for Assignments */}
+            <View style={styles.assignmentFilterRow}>
+              {(["All", "Pending", "Completed"] as const).map((af) => {
+                const count =
+                  af === "All"
+                    ? assignments.length
+                    : af === "Pending"
+                    ? assignmentPendingCount
+                    : assignmentCompletedCount;
+                const isActive = assignmentFilter === af;
+                return (
+                  <TouchableOpacity
+                    key={af}
+                    style={[
+                      styles.assignmentFilterPill,
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                      isActive && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => setAssignmentFilter(af)}
+                  >
+                    <Text
+                      style={[
+                        styles.assignmentFilterText,
+                        { color: colors.textSecondary },
+                        isActive && { color: "#FFFFFF", fontWeight: "700" },
+                      ]}
+                    >
+                      {af} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Assignment Search Input */}
+            <View
+              style={[
+                styles.assignmentSearchBox,
+                {
+                  backgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Ionicons name="search-outline" size={16} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.assignmentSearchInput, { color: colors.text }]}
+                placeholder="Search assignments by topic or subject..."
+                placeholderTextColor={colors.textSecondary}
+                value={assignmentSearch}
+                onChangeText={setAssignmentSearch}
+              />
+              {assignmentSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setAssignmentSearch("")}>
+                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Assignment Cards */}
+            {loadingAssignments ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                  Loading course assignments...
+                </Text>
+              </View>
+            ) : filteredAssignments.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="document-text-outline" size={40} color={colors.textSecondary} />
+                <Text style={[styles.emptyText, { color: colors.textSecondary, marginTop: 8 }]}>
+                  No course assignments found in this category.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ gap: 12, marginTop: 10 }}>
+                {filteredAssignments.map((item) => {
+                  const isDone = item.completedStudents?.includes(currentUid) || false;
+                  const completedTotal = item.completedStudents?.length || 0;
+
+                  return (
+                    <View
+                      key={item.id}
+                      style={[
+                        styles.assignmentCard,
+                        {
+                          backgroundColor: colors.card,
+                          borderColor: isDone ? "#10B981" : colors.border,
+                        },
+                      ]}
+                    >
+                      {/* Top Row: Subject badge, Class, and Status */}
+                      <View style={styles.assignmentTopRow}>
+                        <View style={styles.assignmentBadgeRow}>
+                          <View style={styles.assignmentSubjectPill}>
+                            <Text style={styles.assignmentSubjectText}>{item.subject}</Text>
+                          </View>
+                          {item.targetClass ? (
+                            <Text style={[styles.assignmentTargetClass, { color: colors.textSecondary }]}>
+                              {item.targetClass}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Status Badge */}
+                        <View
+                          style={[
+                            styles.assignmentStatusBadge,
+                            item.status === "Published" || item.status === "Active"
+                              ? styles.statusActive
+                              : item.status === "Under Review"
+                              ? styles.statusReview
+                              : styles.statusClosed,
+                          ]}
+                        >
+                          <Text style={styles.assignmentStatusText}>{item.status}</Text>
+                        </View>
+                      </View>
+
+                      {/* Title & Description */}
+                      <Text style={[styles.assignmentTitle, { color: colors.text }]}>{item.title}</Text>
+                      {item.description ? (
+                        <Text style={[styles.assignmentDesc, { color: colors.textSecondary }]} numberOfLines={3}>
+                          {item.description}
+                        </Text>
+                      ) : null}
+
+                      {/* Due Date & Marks */}
+                      <View style={styles.assignmentMetaRow}>
+                        <View style={styles.metaPill}>
+                          <Ionicons name="calendar-outline" size={13} color="#EF4444" />
+                          <Text style={styles.metaPillText}>Due: {item.dueDate}</Text>
+                        </View>
+                        <View style={styles.metaPill}>
+                          <Ionicons name="trophy-outline" size={13} color="#D97706" />
+                          <Text style={styles.metaPillText}>{item.totalPoints || 25} Marks</Text>
+                        </View>
+                      </View>
+
+                      {/* Teacher Guidelines / Updates if present */}
+                      {item.teacherFeedback ? (
+                        <View
+                          style={[
+                            styles.teacherGuidelineBox,
+                            {
+                              backgroundColor: isDark ? "rgba(37,99,235,0.12)" : "#EFF6FF",
+                              borderColor: isDark ? "rgba(37,99,235,0.3)" : "#BFDBFE",
+                            },
+                          ]}
+                        >
+                          <Ionicons name="information-circle" size={15} color="#2563EB" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.teacherGuidelineLabel}>Faculty Guidelines & Updates:</Text>
+                            <Text style={[styles.teacherGuidelineText, { color: colors.text }]}>
+                              {item.teacherFeedback}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {/* Attached PDF Button */}
+                      {item.pdfUrl ? (
+                        <TouchableOpacity
+                          style={styles.pdfAttachBtn}
+                          onPress={() => shareOrDownloadPdf(item.pdfUrl!, item.pdfName || "Assignment.pdf")}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="document-text" size={16} color="#DC2626" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.pdfAttachTitle} numberOfLines={1}>
+                              {item.pdfName || "View & Download Assignment PDF"}
+                            </Text>
+                            <Text style={styles.pdfAttachSub}>Official Faculty Question Paper</Text>
+                          </View>
+                          <Ionicons name="download-outline" size={15} color="#2563EB" />
+                        </TouchableOpacity>
+                      ) : null}
+
+                      {/* Completion Status & Action Button */}
+                      <View style={[styles.completionFooter, { borderTopColor: colors.border }]}>
+                        <View style={styles.completionStatusCol}>
+                          <View
+                            style={[
+                              styles.completionIndicatorBadge,
+                              isDone ? styles.badgeDone : styles.badgePending,
+                            ]}
+                          >
+                            <Ionicons
+                              name={isDone ? "checkmark-circle" : "time-outline"}
+                              size={13}
+                              color={isDone ? "#059669" : "#D97706"}
+                            />
+                            <Text style={[styles.completionIndicatorText, isDone ? styles.textDone : styles.textPending]}>
+                              {isDone ? "Completed" : "Pending Submission"}
+                            </Text>
+                          </View>
+                          <Text style={[styles.completedCountText, { color: colors.textSecondary }]}>
+                            👥 {completedTotal} {completedTotal === 1 ? "student" : "students"} completed
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.toggleCompleteBtn,
+                            isDone ? styles.btnUndo : styles.btnComplete,
+                          ]}
+                          onPress={() => handleToggleAssignment(item)}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons
+                            name={isDone ? "refresh" : "checkmark-done"}
+                            size={14}
+                            color={isDone ? "#EF4444" : "#FFFFFF"}
+                          />
+                          <Text style={[styles.toggleCompleteBtnText, isDone ? styles.textUndo : styles.textComplete]}>
+                            {isDone ? "Mark Incomplete" : "Mark as Completed"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        ) : (
+          /* ================================================== */
+          /* 2. PERSONAL STUDY TASKS STREAM                     */
+          /* ================================================== */
+          <>
+        {/* ================================================== */}
         {/* FILTER PILLS ROW */}
         {/* ================================================== */}
         <View style={styles.filterRow}>
@@ -792,6 +1140,8 @@ export default function TasksScreen() {
             <Text style={styles.addTaskButtonText}>{t("addTask", "Add Task")}</Text>
           </TouchableOpacity>
         </View>
+          </>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -1497,4 +1847,235 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+
+  /* SECTION TOGGLE */
+  sectionToggleRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    gap: 8,
+  },
+  sectionToggleBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+  },
+  sectionToggleBtnActive: {
+    backgroundColor: "#4F46E5",
+    borderColor: "#4F46E5",
+  },
+  sectionToggleBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  sectionToggleBtnTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+
+  /* ASSIGNMENTS VIEW */
+  loadingContainer: {
+    padding: 30,
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 12,
+  },
+  assignmentFilterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  assignmentFilterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  assignmentFilterText: {
+    fontSize: 11.5,
+    fontWeight: "600",
+  },
+  assignmentSearchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  assignmentSearchInput: {
+    flex: 1,
+    fontSize: 12,
+    padding: 0,
+  },
+  assignmentCard: {
+    borderRadius: 12,
+    borderWidth: 1.5,
+    padding: 14,
+    gap: 8,
+  },
+  assignmentTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  assignmentBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  assignmentSubjectPill: {
+    backgroundColor: "#EEF2FF",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  assignmentSubjectText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#4F46E5",
+  },
+  assignmentTargetClass: {
+    fontSize: 10.5,
+  },
+  assignmentStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusActive: { backgroundColor: "#DCFCE7" },
+  statusReview: { backgroundColor: "#FEF3C7" },
+  statusClosed: { backgroundColor: "#F1F5F9" },
+  assignmentStatusText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#1E293B",
+  },
+  assignmentTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  assignmentDesc: {
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  assignmentMetaRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginVertical: 2,
+  },
+  metaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  metaPillText: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  teacherGuidelineBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  teacherGuidelineLabel: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  teacherGuidelineText: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  pdfAttachBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+    padding: 10,
+    borderRadius: 8,
+  },
+  pdfAttachTitle: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#991B1B",
+  },
+  pdfAttachSub: {
+    fontSize: 9.5,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  completionFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  completionStatusCol: {
+    flex: 1,
+  },
+  completionIndicatorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  badgeDone: {},
+  badgePending: {},
+  completionIndicatorText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  textDone: { color: "#059669" },
+  textPending: { color: "#D97706" },
+  completedCountText: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  toggleCompleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  btnComplete: {
+    backgroundColor: "#059669",
+  },
+  btnUndo: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FECDD3",
+  },
+  toggleCompleteBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  textComplete: { color: "#FFFFFF" },
+  textUndo: { color: "#EF4444" },
 });

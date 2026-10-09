@@ -31,6 +31,17 @@ import {
 import { auth, db } from "../firebase/config";
 import { useAppTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
+import UniversalRoleControls from "../components/UniversalRoleControls";
+import {
+  subscribeMessMenu,
+  toggleTakeFood,
+  checkUserMealOptIn,
+  submitFoodFeedback,
+  getMessAiResponse,
+  UnifiedMeal,
+  SpecialNote,
+} from "../services/messUnifiedService";
+import { notifyAdmin, notifyMessManager } from "../services/notificationService";
 
 type DayMenu = {
   day: string;
@@ -141,6 +152,24 @@ export default function MessScreen() {
   const [loading, setLoading] = useState(true);
   const [weeklyMenu, setWeeklyMenu] = useState<Record<string, DayMenu>>(DEFAULT_WEEKLY_MENUS);
 
+  // Live Unified Mess Menu & Special Note (from Mess Manager)
+  const [unifiedMeals, setUnifiedMeals] = useState<UnifiedMeal[]>([]);
+  const [specialNote, setSpecialNote] = useState<SpecialNote | null>(null);
+
+  // Take Food Opt-in status for each meal
+  const [optedMeals, setOptedMeals] = useState<Record<string, boolean>>({});
+  const [togglingMeal, setTogglingMeal] = useState<Record<string, boolean>>({});
+
+  // Mess AI Assistant Modal
+  const [aiModal, setAiModal] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiChat, setAiChat] = useState<Array<{ sender: "user" | "ai"; text: string }>>([
+    {
+      sender: "ai",
+      text: "Hello! I am your Mess AI Assistant. Ask me what's for breakfast/lunch/dinner, meal service timings, special dish details, or nutritional combos!",
+    },
+  ]);
+
   // User details
   const [currentStudentName, setCurrentStudentName] = useState("Student");
   const [currentStudentRollNo, setCurrentStudentRollNo] = useState("23CSE001");
@@ -190,16 +219,20 @@ export default function MessScreen() {
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    const unsub = onSnapshot(doc(db, "users", user.uid), (snap) => {
-      if (snap.exists()) {
-        const d = snap.data();
-        setCurrentStudentName(d.fullName || d.name || user.displayName || "Student");
-        setCurrentStudentRollNo(d.rollNo || "23CSE001");
-        if (d.role === "teacher" || d.role === "admin" || d.teacherId) {
-          setIsTeacherOrAdmin(true);
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setCurrentStudentName(d.fullName || d.name || user.displayName || "Student");
+          setCurrentStudentRollNo(d.rollNo || "23CSE001");
+          if (d.role === "teacher" || d.role === "admin" || d.teacherId) {
+            setIsTeacherOrAdmin(true);
+          }
         }
-      }
-    });
+      },
+      () => {}
+    );
     return () => unsub();
   }, []);
 
@@ -222,7 +255,29 @@ export default function MessScreen() {
     return () => unsub();
   }, []);
 
-  // 4. Firestore sync for mess_menu
+  // 4. Firestore sync for Unified Mess Menu & Special Note (Managed by Mess Manager)
+  useEffect(() => {
+    const unsub = subscribeMessMenu(({ meals, specialNote: note }) => {
+      setUnifiedMeals(meals);
+      setSpecialNote(note);
+    });
+    return () => unsub();
+  }, []);
+
+  // 5. Check if user already marked "Take Food" for today's meals
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const meals = ["Breakfast", "Lunch", "Snacks", "Dinner"] as const;
+    meals.forEach(async (m) => {
+      try {
+        const isOpted = await checkUserMealOptIn(user.uid, m);
+        setOptedMeals((prev) => ({ ...prev, [m]: isOpted }));
+      } catch (_) {}
+    });
+  }, []);
+
+  // 6. Firestore sync for mess_menu
   useEffect(() => {
     const messCol = collection(db, "mess_menu");
     const unsubscribe = onSnapshot(
@@ -258,14 +313,18 @@ export default function MessScreen() {
     return unsubscribe;
   }, []);
 
-  // 5. Real-time listener for recent feedbacks
+  // 7. Real-time listener for recent feedbacks
   useEffect(() => {
     try {
       const q = query(collection(db, "mess_feedback"), orderBy("createdAt", "desc"));
-      const unsub = onSnapshot(q, (snap) => {
-        const list = snap.docs.slice(0, 5).map((d) => ({ id: d.id, ...d.data() }));
-        setRecentFeedbacks(list);
-      });
+      const unsub = onSnapshot(
+        q,
+        (snap) => {
+          const list = snap.docs.slice(0, 5).map((d) => ({ id: d.id, ...d.data() }));
+          setRecentFeedbacks(list);
+        },
+        () => {}
+      );
       return () => unsub();
     } catch (e) {
       console.warn("Mess feedback sub error:", e);
@@ -274,43 +333,70 @@ export default function MessScreen() {
 
   const currentMenu = weeklyMenu[selectedDay] || DEFAULT_WEEKLY_MENUS[selectedDay] || DEFAULT_WEEKLY_MENUS.Mon;
 
+  // Toggle "Take Food" opt-in
+  const handleToggleTakeFood = async (mealType: "Breakfast" | "Lunch" | "Snacks" | "Dinner") => {
+    const user = auth.currentUser;
+    const uid = user ? user.uid : "guest_user";
+    const role = isTeacherOrAdmin ? "teacher" : "student";
+    try {
+      setTogglingMeal((prev) => ({ ...prev, [mealType]: true }));
+      const newState = await toggleTakeFood(mealType, uid, currentStudentName, role);
+      setOptedMeals((prev) => ({ ...prev, [mealType]: newState }));
+      Alert.alert(
+        newState ? "Opted In! 🍽️" : "Opted Out",
+        newState
+          ? `You have marked attendance for ${mealType}. Central kitchen headcount updated in real time!`
+          : `You have cancelled attendance for ${mealType}.`
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Could not update Take Food status");
+    } finally {
+      setTogglingMeal((prev) => ({ ...prev, [mealType]: false }));
+    }
+  };
+
   // Submit Daily Food Feedback
   const handleSubmitFeedback = async () => {
     try {
       setSubmittingFeedback(true);
       const user = auth.currentUser;
-      const todayStr = new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
 
-      await addDoc(collection(db, "mess_feedback"), {
-        studentId: user ? user.uid : "guest",
-        studentName: currentStudentName,
-        studentRollNo: currentStudentRollNo,
-        studentEmail: user ? user.email : "guest@campusly.edu",
+      await submitFoodFeedback({
+        userId: user ? user.uid : "guest",
+        userEmail: user?.email || "",
+        userName: currentStudentName,
+        userRole: isTeacherOrAdmin ? "teacher" : "student",
         meal: feedbackMeal,
         rating: overallRating,
         tasteRating,
         hygieneRating,
         comment: feedbackComment.trim() || "Food was well prepared.",
-        status: "Pending",
-        date: todayStr,
-        createdAt: serverTimestamp(),
       });
 
       setFeedbackModal(false);
       setFeedbackComment("");
       Alert.alert(
         "Feedback Submitted! 🍽️",
-        `Thank you ${currentStudentName}! Your ${overallRating}-star review for ${feedbackMeal} has been sent directly to the Mess Supervisor and Faculty Committee.`
+        `Thank you ${currentStudentName}! Your ${overallRating}-star review for ${feedbackMeal} has been sent to Mess Management & Admin.`
       );
     } catch (err: any) {
       Alert.alert("Submission Failed", err?.message || "Could not save your rating.");
     } finally {
       setSubmittingFeedback(false);
     }
+  };
+
+  // Mess AI Assistant query
+  const handleSendAiQuery = (customText?: string) => {
+    const textToSend = customText || aiQuery;
+    if (!textToSend.trim()) return;
+    const userMessage = textToSend.trim();
+    setAiChat((prev) => [...prev, { sender: "user", text: userMessage }]);
+    setAiQuery("");
+    setTimeout(() => {
+      const response = getMessAiResponse(userMessage, unifiedMeals, specialNote, recentFeedbacks.length);
+      setAiChat((prev) => [...prev, { sender: "ai", text: response }]);
+    }, 300);
   };
 
   // Submit General Complaint
@@ -323,7 +409,7 @@ export default function MessScreen() {
     try {
       setSubmittingComplaint(true);
       const user = auth.currentUser;
-      await addDoc(collection(db, "complaints"), {
+      const compDocRef = await addDoc(collection(db, "complaints"), {
         userId: user ? user.uid : "anonymous",
         userEmail: user ? user.email : "guest",
         studentName: currentStudentName,
@@ -334,9 +420,28 @@ export default function MessScreen() {
         createdAt: serverTimestamp(),
       });
 
+      // Dual-notify Mess Manager and Admin
+      try {
+        await notifyMessManager(
+          `⚠️ New Mess Grievance: ${selectedDay}`,
+          `Student ${currentStudentName} submitted a mess complaint: "${complaintText.trim()}"`,
+          "mess",
+          { complaintId: compDocRef.id }
+        );
+      } catch (_) {}
+
+      try {
+        await notifyAdmin(
+          `⚠️ New Mess Grievance: ${selectedDay}`,
+          `Student ${currentStudentName} submitted a mess complaint: "${complaintText.trim()}"`,
+          "mess",
+          { complaintId: compDocRef.id }
+        );
+      } catch (_) {}
+
       setComplaintText("");
       setComplaintModal(false);
-      Alert.alert("Complaint Submitted", "Your mess feedback has been forwarded to the Mess Committee.");
+      Alert.alert("Complaint Submitted", "Your mess feedback has been forwarded directly to the Mess Manager and Admin.");
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Failed to submit complaint.");
     } finally {
@@ -412,10 +517,19 @@ export default function MessScreen() {
           <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Central Dining Hall</Text>
         </View>
 
-        <TouchableOpacity onPress={() => setFeedbackModal(true)} style={styles.rateHeaderBtn}>
-          <Ionicons name="star" size={16} color="#FBBF24" />
-          <Text style={styles.rateHeaderBtnText}>Rate Food</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <UniversalRoleControls compact />
+
+          <TouchableOpacity onPress={() => setAiModal(true)} style={styles.aiHeaderBtn}>
+            <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+            <Text style={styles.aiHeaderBtnText}>Mess AI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setFeedbackModal(true)} style={styles.rateHeaderBtn}>
+            <Ionicons name="star" size={16} color="#FBBF24" />
+            <Text style={styles.rateHeaderBtnText}>Rate Food</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -474,6 +588,36 @@ export default function MessScreen() {
           />
         </View>
 
+        {/* SPECIAL NOTE BANNER FROM MESS MANAGER (LIVE) */}
+        {specialNote && (
+          <View
+            style={[
+              styles.specialNoteBanner,
+              {
+                backgroundColor: isDark ? "rgba(245,158,11,0.12)" : "#FFFBEB",
+                borderColor: isDark ? "rgba(245,158,11,0.28)" : "#FDE68A",
+              },
+            ]}
+          >
+            <View style={styles.specialNoteIconCircle}>
+              <Ionicons name="sparkles" size={18} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                <Text style={[styles.specialNoteTag, { color: isDark ? "#FBBF24" : "#B45309" }]}>
+                  ⭐ SPECIAL NOTE FROM MESS MANAGER
+                </Text>
+                <Text style={{ fontSize: 11, color: isDark ? "#FDE68A" : "#92400E" }}>
+                  {specialNote.updatedAt}
+                </Text>
+              </View>
+              <Text style={[styles.specialNoteText, { color: isDark ? "#FEF3C7" : "#78350F" }]}>
+                {specialNote.text}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* SPECIAL DISH TAG IF AVAILABLE */}
         {currentMenu.specialDish && (
           <View style={[styles.specialBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}>
@@ -509,63 +653,86 @@ export default function MessScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* MEAL SCHEDULE CARDS */}
+        {/* MEAL SCHEDULE CARDS WITH REAL-TIME TIMINGS & TAKE FOOD */}
         <View style={styles.mealGrid}>
-          {/* Breakfast */}
-          <View style={[styles.mealCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.mealCardHeader}>
-              <View style={[styles.mealIconCircle, { backgroundColor: "#FFF7ED" }]}>
-                <Ionicons name="sunny" size={20} color="#EA580C" />
-              </View>
-              <View style={styles.mealTimeBadge}>
-                <Text style={styles.mealTimeText}>{currentMenu.breakfastTime}</Text>
-              </View>
-            </View>
-            <Text style={[styles.mealTitle, { color: colors.text }]}>Breakfast</Text>
-            <Text style={[styles.mealItems, { color: colors.textSecondary }]}>{currentMenu.breakfast}</Text>
-          </View>
+          {(["Breakfast", "Lunch", "Snacks", "Dinner"] as const).map((mealType) => {
+            const liveMeal = unifiedMeals.find((m) => m.type === mealType);
+            const mealItems = liveMeal ? liveMeal.items : (
+              mealType === "Breakfast" ? currentMenu.breakfast :
+              mealType === "Lunch" ? currentMenu.lunch :
+              mealType === "Snacks" ? currentMenu.snacks : currentMenu.dinner
+            );
+            const mealTime = liveMeal ? liveMeal.timing : (
+              mealType === "Breakfast" ? currentMenu.breakfastTime :
+              mealType === "Lunch" ? currentMenu.lunchTime :
+              mealType === "Snacks" ? currentMenu.snacksTime : currentMenu.dinnerTime
+            );
+            const takesCount = liveMeal ? liveMeal.takesCount : 0;
+            const isOpted = !!optedMeals[mealType];
 
-          {/* Lunch */}
-          <View style={[styles.mealCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.mealCardHeader}>
-              <View style={[styles.mealIconCircle, { backgroundColor: "#ECFDF5" }]}>
-                <Ionicons name="restaurant-outline" size={20} color="#10B981" />
-              </View>
-              <View style={styles.mealTimeBadge}>
-                <Text style={styles.mealTimeText}>{currentMenu.lunchTime}</Text>
-              </View>
-            </View>
-            <Text style={[styles.mealTitle, { color: colors.text }]}>Lunch</Text>
-            <Text style={[styles.mealItems, { color: colors.textSecondary }]}>{currentMenu.lunch}</Text>
-          </View>
+            const iconName =
+              mealType === "Breakfast" ? "sunny" :
+              mealType === "Lunch" ? "restaurant-outline" :
+              mealType === "Snacks" ? "cafe-outline" : "moon-outline";
+            const iconBg =
+              mealType === "Breakfast" ? "#FFF7ED" :
+              mealType === "Lunch" ? "#ECFDF5" :
+              mealType === "Snacks" ? "#FEF3C7" : "#EEF2FF";
+            const iconColor =
+              mealType === "Breakfast" ? "#EA580C" :
+              mealType === "Lunch" ? "#10B981" :
+              mealType === "Snacks" ? "#D97706" : "#4F46E5";
 
-          {/* Snacks */}
-          <View style={[styles.mealCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.mealCardHeader}>
-              <View style={[styles.mealIconCircle, { backgroundColor: "#FEF3C7" }]}>
-                <Ionicons name="cafe-outline" size={20} color="#D97706" />
-              </View>
-              <View style={styles.mealTimeBadge}>
-                <Text style={styles.mealTimeText}>{currentMenu.snacksTime}</Text>
-              </View>
-            </View>
-            <Text style={[styles.mealTitle, { color: colors.text }]}>Evening Snacks</Text>
-            <Text style={[styles.mealItems, { color: colors.textSecondary }]}>{currentMenu.snacks}</Text>
-          </View>
+            return (
+              <View key={mealType} style={[styles.mealCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.mealCardHeader}>
+                  <View style={[styles.mealIconCircle, { backgroundColor: iconBg }]}>
+                    <Ionicons name={iconName as any} size={20} color={iconColor} />
+                  </View>
+                  <View style={styles.mealTimeBadge}>
+                    <Ionicons name="time-outline" size={11} color={colors.textSecondary} style={{ marginRight: 3 }} />
+                    <Text style={styles.mealTimeText}>{mealTime}</Text>
+                  </View>
+                </View>
 
-          {/* Dinner */}
-          <View style={[styles.mealCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.mealCardHeader}>
-              <View style={[styles.mealIconCircle, { backgroundColor: "#EEF2FF" }]}>
-                <Ionicons name="moon-outline" size={20} color="#4F46E5" />
+                <Text style={[styles.mealTitle, { color: colors.text }]}>
+                  {mealType === "Snacks" ? "Evening Snacks" : mealType}
+                </Text>
+                <Text style={[styles.mealItems, { color: colors.textSecondary }]}>{mealItems}</Text>
+
+                {/* TAKE FOOD ACTION & HEADCOUNT ROW */}
+                <View style={styles.mealCardFooter}>
+                  <View style={styles.headcountBadge}>
+                    <Ionicons name="restaurant" size={12} color="#059669" />
+                    <Text style={styles.headcountBadgeText}>{takesCount} attending</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.takeFoodBtn,
+                      isOpted ? styles.takeFoodBtnActive : styles.takeFoodBtnInactive,
+                    ]}
+                    onPress={() => handleToggleTakeFood(mealType)}
+                    disabled={togglingMeal[mealType]}
+                  >
+                    <Ionicons
+                      name={isOpted ? "checkmark-circle" : "restaurant-outline"}
+                      size={13}
+                      color={isOpted ? "#FFFFFF" : colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.takeFoodBtnText,
+                        isOpted ? styles.takeFoodBtnTextActive : { color: colors.primary },
+                      ]}
+                    >
+                      {togglingMeal[mealType] ? "..." : isOpted ? "Taking Food ✓" : "Take Food"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.mealTimeBadge}>
-                <Text style={styles.mealTimeText}>{currentMenu.dinnerTime}</Text>
-              </View>
-            </View>
-            <Text style={[styles.mealTitle, { color: colors.text }]}>Dinner</Text>
-            <Text style={[styles.mealItems, { color: colors.textSecondary }]}>{currentMenu.dinner}</Text>
-          </View>
+            );
+          })}
         </View>
 
         {/* LIVE MESS SUPERVISOR DETAILS CARD (EDITABLE & REALTIME) */}
@@ -920,6 +1087,82 @@ export default function MessScreen() {
                 ) : (
                   <Text style={styles.submitBtnText}>{t("save", "Submit")}</Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* MESS AI ASSISTANT MODAL (STUDENT / USER) */}
+      <Modal visible={aiModal} transparent animationType="fade" onRequestClose={() => setAiModal(false)}>
+        <Pressable style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]} onPress={() => setAiModal(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: 520 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 0 }]}>Mess AI Assistant</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>Ask anything about meals, timings & nutrition</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setAiModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick chips */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+              {["What's for lunch?", "What's for dinner?", "Meal service timings", "Special note"].map((chip) => (
+                <TouchableOpacity
+                  key={chip}
+                  style={{ backgroundColor: colors.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}
+                  onPress={() => handleSendAiQuery(chip)}
+                >
+                  <Text style={{ fontSize: 11, color: "#7C3AED", fontWeight: "600" }}>{chip}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Chat Body */}
+            <ScrollView style={{ maxHeight: 260, backgroundColor: colors.surface, borderRadius: 10, padding: 10, marginBottom: 12 }}>
+              {aiChat.map((m, idx) => (
+                <View
+                  key={idx}
+                  style={{
+                    alignSelf: m.sender === "user" ? "flex-end" : "flex-start",
+                    backgroundColor: m.sender === "user" ? colors.primary : colors.card,
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    maxWidth: "85%",
+                    borderWidth: m.sender === "user" ? 0 : 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, lineHeight: 18, color: m.sender === "user" ? "#FFFFFF" : colors.text }}>
+                    {m.text}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Input Row */}
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <TextInput
+                style={[styles.textInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                placeholderTextColor={colors.textMuted}
+                value={aiQuery}
+                onChangeText={setAiQuery}
+                placeholder="Ask Mess AI about meals, timings..."
+                onSubmitEditing={() => handleSendAiQuery()}
+              />
+              <TouchableOpacity
+                style={{ backgroundColor: "#7C3AED", width: 42, height: 42, borderRadius: 10, alignItems: "center", justifyContent: "center" }}
+                onPress={() => handleSendAiQuery()}
+              >
+                <Ionicons name="send" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -1393,5 +1636,93 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  aiHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  aiHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  specialNoteBanner: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+    marginBottom: 12,
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  specialNoteIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  specialNoteTag: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  specialNoteText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  mealCardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(148,163,184,0.15)",
+  },
+  headcountBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  headcountBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  takeFoodBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  takeFoodBtnActive: {
+    backgroundColor: "#059669",
+    borderColor: "#059669",
+  },
+  takeFoodBtnInactive: {
+    backgroundColor: "transparent",
+    borderColor: "#CBD5E1",
+  },
+  takeFoodBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  takeFoodBtnTextActive: {
+    color: "#FFFFFF",
   },
 });

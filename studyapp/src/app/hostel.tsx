@@ -30,6 +30,13 @@ import {
 import { auth, db } from "../firebase/config";
 import { useAppTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
+import UniversalRoleControls from "../components/UniversalRoleControls";
+import hostelDataService from "../services/hostelDataService";
+import {
+  notifyHostelManager,
+  notifyAdmin,
+  notifyStudent,
+} from "../services/notificationService";
 
 type HostelInfo = {
   blockName: string;
@@ -80,7 +87,7 @@ export default function HostelScreen() {
   const [submittingComplaint, setSubmittingComplaint] = useState(false);
   const [detailsModal, setDetailsModal] = useState(false);
 
-  // Firestore sync for user hostel details
+  // Firestore sync for user hostel details (Both allocation doc and user profile direct sync)
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) {
@@ -89,7 +96,7 @@ export default function HostelScreen() {
     }
 
     const hostelRef = doc(db, "users", user.uid, "hostel", "allocation");
-    const unsubscribe = onSnapshot(
+    const unsubscribeAllocation = onSnapshot(
       hostelRef,
       async (snap) => {
         if (!snap.exists()) {
@@ -105,18 +112,19 @@ export default function HostelScreen() {
         }
 
         const data = snap.data();
-        setHostel({
-          blockName: data.blockName || DEFAULT_HOSTEL.blockName,
-          type: data.type || DEFAULT_HOSTEL.type,
-          status: data.status || "Active",
-          roomNo: data.roomNo || DEFAULT_HOSTEL.roomNo,
-          roomType: data.roomType || DEFAULT_HOSTEL.roomType,
-          floor: data.floor || DEFAULT_HOSTEL.floor,
-          wardenName: data.wardenName || DEFAULT_HOSTEL.wardenName,
-          wardenPhone: data.wardenPhone || DEFAULT_HOSTEL.wardenPhone,
-          securityStatus: data.securityStatus || DEFAULT_HOSTEL.securityStatus,
-          bedNo: data.bedNo || DEFAULT_HOSTEL.bedNo,
-        });
+        setHostel((prev) => ({
+          ...prev,
+          blockName: data.blockName || prev.blockName || DEFAULT_HOSTEL.blockName,
+          type: data.type || prev.type || DEFAULT_HOSTEL.type,
+          status: data.status || prev.status || "Active",
+          roomNo: data.roomNo || prev.roomNo || DEFAULT_HOSTEL.roomNo,
+          roomType: data.roomType || prev.roomType || DEFAULT_HOSTEL.roomType,
+          floor: data.floor || prev.floor || DEFAULT_HOSTEL.floor,
+          wardenName: data.wardenName || prev.wardenName || DEFAULT_HOSTEL.wardenName,
+          wardenPhone: data.wardenPhone || prev.wardenPhone || DEFAULT_HOSTEL.wardenPhone,
+          securityStatus: data.securityStatus || prev.securityStatus || DEFAULT_HOSTEL.securityStatus,
+          bedNo: data.bedNo || prev.bedNo || DEFAULT_HOSTEL.bedNo,
+        }));
         setLoading(false);
       },
       (err) => {
@@ -125,7 +133,30 @@ export default function HostelScreen() {
       }
     );
 
-    return unsubscribe;
+    // Direct listener on user profile doc: captures Notice Manager & Hostel Manager allocations in realtime
+    const userDocRef = doc(db, "users", user.uid);
+    const unsubscribeUser = onSnapshot(
+      userDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          const u = snap.data();
+          if (u.roomNo || u.hostelBlock || u.hostelStatus) {
+            setHostel((prev) => ({
+              ...prev,
+              roomNo: u.roomNo || prev.roomNo,
+              blockName: u.hostelBlock || prev.blockName,
+              status: u.hostelStatus === "Enrolled" ? "Active" : (u.hostelStatus || prev.status),
+            }));
+          }
+        }
+      },
+      (err) => console.warn("User hostel sync listener error:", err)
+    );
+
+    return () => {
+      unsubscribeAllocation();
+      unsubscribeUser();
+    };
   }, []);
 
   // Firestore sync for hostel complaints
@@ -192,20 +223,108 @@ export default function HostelScreen() {
     try {
       setSubmittingComplaint(true);
       const user = auth.currentUser;
-      await addDoc(collection(db, "complaints"), {
+      const studentName = user?.displayName || user?.email?.split("@")[0] || "Resident Student";
+      const studentEmail = user?.email || "";
+      const trimmedMsg = complaintText.trim();
+      const currentRoom = hostel.roomNo || "Room";
+
+      // 1. Primary write to `complaints` collection
+      const complaintRef = await addDoc(collection(db, "complaints"), {
         userId: user ? user.uid : "anonymous",
-        userEmail: user ? user.email : "guest",
+        userEmail: studentEmail,
+        studentName,
         type: "Hostel",
         category: complaintCategory,
-        message: complaintText.trim(),
-        roomNo: hostel.roomNo,
+        message: trimmedMsg,
+        description: trimmedMsg,
+        roomNo: currentRoom,
         status: "Submitted",
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
+
+      // 2. Also register in `requests` collection for unified admin pipeline
+      await addDoc(collection(db, "requests"), {
+        complaintId: complaintRef.id,
+        requesterId: user ? user.uid : "anonymous",
+        requesterName: studentName,
+        requesterEmail: studentEmail,
+        requesterRole: "Student",
+        title: `Hostel ${complaintCategory}: ${currentRoom}`,
+        description: trimmedMsg,
+        category: "Hostel",
+        subCategory: complaintCategory,
+        location: `${hostel.blockName || "Hostel"} - ${currentRoom}`,
+        roomNo: currentRoom,
+        passType: "complaint",
+        priority: "Normal",
+        status: "Pending",
+        auditTrail: [
+          {
+            time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+            actor: "Student",
+            action: `Submitted complaint: ${complaintCategory}`,
+          },
+        ],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      // 3. Sync to in-memory hostelDataService
+      try {
+        hostelDataService.addComplaint({
+          category: complaintCategory as any,
+          description: trimmedMsg,
+          date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+          status: "New",
+          studentName,
+          roomNo: currentRoom,
+        });
+      } catch (_) {}
+
+      // 4. Send notification directly to Hostel Manager
+      await notifyHostelManager(
+        `New Hostel Complaint: ${complaintCategory}`,
+        `${studentName} (${currentRoom}): "${trimmedMsg.slice(0, 80)}"`,
+        "hostel",
+        {
+          complaintId: complaintRef.id,
+          roomNo: currentRoom,
+          studentEmail,
+          category: complaintCategory,
+        }
+      );
+
+      // 5. Send notification directly to Admin
+      await notifyAdmin(
+        `Hostel Facility Complaint: ${complaintCategory}`,
+        `${studentName} logged an issue in ${currentRoom}: "${trimmedMsg.slice(0, 80)}"`,
+        "hostel",
+        {
+          complaintId: complaintRef.id,
+          roomNo: currentRoom,
+          studentEmail,
+          category: complaintCategory,
+        }
+      );
+
+      // 6. Notify student that their complaint is received
+      if (studentEmail) {
+        await notifyStudent(
+          studentEmail,
+          "Hostel Complaint Submitted ✅",
+          `Your ticket for ${complaintCategory} in ${currentRoom} has been received by Admin & Hostel Manager.`,
+          "hostel",
+          { complaintId: complaintRef.id }
+        );
+      }
 
       setComplaintText("");
       setComplaintModal(false);
-      Alert.alert(t("success", "Complaint Registered"), "Your complaint has been submitted to the hostel warden.");
+      Alert.alert(
+        t("success", "Complaint Registered"),
+        "Your complaint has been submitted directly to the Hostel Manager and Admin."
+      );
     } catch (e: any) {
       Alert.alert(t("error", "Error"), e?.message || "Failed to submit complaint.");
     } finally {
@@ -234,9 +353,12 @@ export default function HostelScreen() {
 
         <Text style={[styles.headerTitle, { color: colors.text }]}>{t("hostel", "Hostel Management")}</Text>
 
-        <TouchableOpacity onPress={() => router.push("/notices")} style={styles.headerIconBtn}>
-          <Ionicons name="notifications-outline" size={22} color={colors.text} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <UniversalRoleControls compact />
+          <TouchableOpacity onPress={() => router.push("/notices")} style={styles.headerIconBtn}>
+            <Ionicons name="notifications-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>

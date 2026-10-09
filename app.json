@@ -1,8 +1,21 @@
 {
-  "plugins": [
-    "expo-router"
-  ],
-  "android": {
-    "package": "com.sekher.campusly"
+  "expo": {
+    "name": "Campusly",
+    "slug": "campusly",
+    "version": "1.0.0",
+    "plugins": [
+      "expo-router"
+    ],
+    "android": {
+      "package": "com.sekher.campusly"
+    },
+    "web": {
+      "output": "static"
+    },
+    "extra": {
+      "router": {
+        "root": "studyapp/src/app"
+      }
+    }
   }
 }

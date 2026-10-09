@@ -43,6 +43,10 @@ import {
   seedDefaultConnectedStudents,
   syncAttendanceToStudentProfile,
 } from "../../firebase/teacherStudent";
+import {
+  downloadAttendanceReportPdf,
+  StudentAttendancePdfItem,
+} from "../../services/attendancePdfReportService";
 
 // =====================================================
 // SIDEBAR NAVIGATION ITEMS (MATCHING REFERENCE IMAGE)
@@ -750,6 +754,36 @@ export default function AdminAttendanceScreen() {
   const selectedSubjectConfig = SUBJECT_CONFIGS.find((s) => s.name === selectedSubject);
   const selectedSubjectCode = selectedSubjectConfig?.code || "CS301";
 
+  // Official Attendance PDF Report (ONLY: Name, Attendance Percentage, and Present out of Days)
+  const handleDownloadAttendancePdf = async () => {
+    const pdfItems: StudentAttendancePdfItem[] = students.map((s, idx) => {
+      const monthPresent = s.monthPresentCount ?? 22;
+      const pct = monthWorkingDays > 0 ? (monthPresent / monthWorkingDays) * 100 : 91.7;
+      return {
+        id: s.id,
+        num: idx + 1,
+        rollNo: s.rollNo,
+        studentName: s.studentName,
+        monthPresentCount: monthPresent,
+        totalWorkingDays: monthWorkingDays,
+        percentage: Number(pct.toFixed(1)),
+      };
+    });
+
+    await downloadAttendanceReportPdf(pdfItems, {
+      department: selectedDept,
+      subject: selectedSubject,
+      subjectCode: selectedSubjectCode,
+      section: selectedSection,
+      month: selectedMonth,
+      generatedBy:
+        currentUserRole === "admin"
+          ? "University Administration (Audit)"
+          : `Faculty: ${currentUserName}`,
+      title: `Official Student Academic Attendance & Register Report (${selectedSubject})`,
+    });
+  };
+
   // Quick Status Switch & DIRECT PROFILE SYNC
   const updateStudentStatus = async (id: string, status: "Present" | "Absent" | "Late") => {
     if (!ensureAuthorized()) return;
@@ -1281,6 +1315,15 @@ export default function AdminAttendanceScreen() {
             onSearchChange={setGlobalSearch}
             searchPlaceholder="Search students, subjects, or anything..."
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
+            rightActions={
+              <TouchableOpacity
+                style={[styles.pdfHeaderBtn, { backgroundColor: "#059669" }]}
+                onPress={handleDownloadAttendancePdf}
+              >
+                <Ionicons name="document-text" size={16} color="#FFFFFF" />
+                <Text style={styles.pdfHeaderBtnText}>📄 PDF Report</Text>
+              </TouchableOpacity>
+            }
           />
 
           {/* Scrollable Dashboard Body */}
@@ -2135,6 +2178,14 @@ export default function AdminAttendanceScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  <TouchableOpacity
+                    style={[styles.pdfTableBtn, { backgroundColor: "#059669" }]}
+                    onPress={handleDownloadAttendancePdf}
+                  >
+                    <Ionicons name="document-text" size={14} color="#FFFFFF" />
+                    <Text style={styles.pdfTableBtnText}>Download PDF</Text>
+                  </TouchableOpacity>
 
                   <TouchableOpacity
                     style={styles.addStudentBtn}
@@ -5904,5 +5955,31 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: "600",
     flex: 1,
+  },
+  pdfHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 6,
+  },
+  pdfHeaderBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  pdfTableBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  pdfTableBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

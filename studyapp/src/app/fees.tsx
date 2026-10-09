@@ -29,6 +29,7 @@ import { auth, db } from "../firebase/config";
 import { sendStudentNotification } from "../services/notificationService";
 import { useAppTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
+import UniversalRoleControls from "../components/UniversalRoleControls";
 
 type FeeItem = {
   id: string;
@@ -443,9 +444,12 @@ export default function FeesScreen() {
           {t("fees", "Fee Management")}
         </Text>
 
-        <TouchableOpacity onPress={() => router.push("/notices")}>
-          <Ionicons name="notifications-outline" size={22} color={colors.text} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <UniversalRoleControls compact />
+          <TouchableOpacity onPress={() => router.push("/notices")}>
+            <Ionicons name="notifications-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>

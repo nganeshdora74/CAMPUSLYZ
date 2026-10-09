@@ -34,6 +34,17 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import {
+  subscribeMessMenu,
+  sendAdminSuggestion,
+  takeAdminActionOnMess,
+  subscribeFoodFeedback,
+  takeActionOnFeedback,
+  getMessAiResponse,
+  UnifiedMeal,
+  SpecialNote,
+} from "../../services/messUnifiedService";
+import { notifyStudent } from "../../services/notificationService";
 
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: "home", route: "/admin" },
@@ -60,6 +71,8 @@ export type MessFeedback = {
   studentName?: string;
   studentRollNo?: string;
   studentEmail?: string;
+  userName?: string;
+  userRole?: string;
   meal?: string;
   rating?: number;
   tasteRating?: number;
@@ -70,6 +83,7 @@ export type MessFeedback = {
   date?: string;
   adminReply?: string;
   adminRepliedAt?: any;
+  adminActionNote?: string;
   createdAt?: any;
 };
 
@@ -79,10 +93,43 @@ export default function AdminMessScreen() {
   const { isDark, colors } = useAppTheme();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [updateMenuModal, setUpdateMenuModal] = useState(false);
   const [breakfast, setBreakfast] = useState("Idli, Sambar, Chutney");
   const [lunch, setLunch] = useState("Rice, Dal, Veg Curry, Curd");
   const [dinner, setDinner] = useState("Roti, Paneer, Rice, Dal");
+
+  // Real-time Mess Menu & Special Note from Mess Manager
+  const [unifiedMeals, setUnifiedMeals] = useState<UnifiedMeal[]>([]);
+  const [specialNote, setSpecialNote] = useState<SpecialNote | null>(null);
+
+  // Admin Suggestion Modal (Admin cannot update menu, but gives suggestion)
+  const [suggestionModal, setSuggestionModal] = useState(false);
+  const [suggestionText, setSuggestionText] = useState("");
+  const [suggestionMeal, setSuggestionMeal] = useState("General");
+  const [sendingSuggestion, setSendingSuggestion] = useState(false);
+
+  // Admin Action Modal (Admin takes operational action on mess)
+  const [adminActionModal, setAdminActionModal] = useState(false);
+  const [adminActionType, setAdminActionType] = useState<
+    "Request Revision" | "Order Inspection" | "Issue Quality Warning" | "Approve Menu"
+  >("Request Revision");
+  const [adminActionNote, setAdminActionNote] = useState("");
+  const [takingAction, setTakingAction] = useState(false);
+
+  // Admin Action on Specific Feedback Item
+  const [feedbackActionModal, setFeedbackActionModal] = useState(false);
+  const [feedbackForAction, setFeedbackForAction] = useState<MessFeedback | null>(null);
+  const [feedbackActionNoteInput, setFeedbackActionNoteInput] = useState("");
+  const [savingFeedbackAction, setSavingFeedbackAction] = useState(false);
+
+  // Mess AI Assistant Modal
+  const [aiModal, setAiModal] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiChat, setAiChat] = useState<Array<{ sender: "user" | "ai"; text: string }>>([
+    {
+      sender: "ai",
+      text: "Hello Administrator! I am your Mess AI Assistant. Ask me to summarize today's meal schedule, analyze student opt-in headcounts, review feedback ratings, or inspect dining safety compliance.",
+    },
+  ]);
 
   // Supervisor details
   const [supervisorModal, setSupervisorModal] = useState(false);
@@ -109,16 +156,17 @@ export default function AdminMessScreen() {
   const [feedbackToDelete, setFeedbackToDelete] = useState<MessFeedback | null>(null);
   const [deletingFeedback, setDeletingFeedback] = useState(false);
 
-  // Load Mess Menu from Firestore
+  // Subscribe to Unified Mess Menu & Special Note (Managed by Mess Manager)
   useEffect(() => {
-    const menuDoc = doc(db, "system", "messMenu");
-    const unsubscribe = onSnapshot(menuDoc, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.breakfast) setBreakfast(data.breakfast);
-        if (data.lunch) setLunch(data.lunch);
-        if (data.dinner) setDinner(data.dinner);
-      }
+    const unsubscribe = subscribeMessMenu(({ meals, specialNote: note }) => {
+      setUnifiedMeals(meals);
+      setSpecialNote(note);
+      const b = meals.find((m) => m.type === "Breakfast");
+      if (b) setBreakfast(b.items);
+      const l = meals.find((m) => m.type === "Lunch");
+      if (l) setLunch(l.items);
+      const d = meals.find((m) => m.type === "Dinner");
+      if (d) setDinner(d.items);
     });
     return () => unsubscribe();
   }, []);
@@ -252,30 +300,90 @@ export default function AdminMessScreen() {
     );
   }, [feedbacks, feedbackFilter]);
 
-  const handleSaveMenu = async () => {
-    try {
-      await setDoc(
-        doc(db, "system", "messMenu"),
-        {
-          breakfast,
-          lunch,
-          dinner,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      await addDoc(collection(db, "activities"), {
-        title: "Mess Menu Updated",
-        time: "Just now",
-        user: "Admin",
-        type: "mess",
-        createdAt: serverTimestamp(),
-      });
-      setUpdateMenuModal(false);
-      Alert.alert("Menu Updated", "Today's mess menu updated successfully in Firebase.");
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Failed to update menu");
+  const handleSendAdminSuggestion = async () => {
+    if (!suggestionText.trim()) {
+      Alert.alert("Required", "Please enter your suggestion for the Mess Manager.");
+      return;
     }
+    try {
+      setSendingSuggestion(true);
+      await sendAdminSuggestion(suggestionText.trim(), suggestionMeal, "Campus Administration");
+      setSuggestionModal(false);
+      setSuggestionText("");
+      Alert.alert(
+        "Suggestion Sent 💡",
+        "Your recommendation has been forwarded to the Mess Manager."
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not send suggestion");
+    } finally {
+      setSendingSuggestion(false);
+    }
+  };
+
+  const handleTakeAdminAction = async () => {
+    if (!adminActionNote.trim()) {
+      Alert.alert("Required", "Please provide the official administrative order note.");
+      return;
+    }
+    try {
+      setTakingAction(true);
+      await takeAdminActionOnMess(adminActionType, adminActionNote.trim());
+      setAdminActionModal(false);
+      setAdminActionNote("");
+      Alert.alert(
+        "Admin Action Dispatched ⚡",
+        `Action "${adminActionType}" has been officially dispatched to Mess Management.`
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not dispatch action");
+    } finally {
+      setTakingAction(false);
+    }
+  };
+
+  const handleOpenFeedbackActionModal = (fb: MessFeedback) => {
+    setFeedbackForAction(fb);
+    setFeedbackActionNoteInput(fb.adminActionNote || "");
+    setFeedbackActionModal(true);
+  };
+
+  const handleSaveFeedbackAction = async () => {
+    if (!feedbackForAction || !feedbackActionNoteInput.trim()) {
+      Alert.alert("Required", "Please describe the action taken on this feedback.");
+      return;
+    }
+    try {
+      setSavingFeedbackAction(true);
+      await takeActionOnFeedback(feedbackForAction.id, feedbackActionNoteInput.trim());
+      setFeedbacks((prev) =>
+        prev.map((f) =>
+          f.id === feedbackForAction.id
+            ? { ...f, status: "Action Taken", adminActionNote: feedbackActionNoteInput.trim() }
+            : f
+        )
+      );
+      setFeedbackActionModal(false);
+      setFeedbackForAction(null);
+      setFeedbackActionNoteInput("");
+      Alert.alert("Action Recorded 🛡️", "Kitchen action has been recorded for this feedback.");
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not record action on feedback");
+    } finally {
+      setSavingFeedbackAction(false);
+    }
+  };
+
+  const handleSendAiQuery = (customText?: string) => {
+    const textToSend = customText || aiQuery;
+    if (!textToSend.trim()) return;
+    const userMessage = textToSend.trim();
+    setAiChat((prev) => [...prev, { sender: "user", text: userMessage }]);
+    setAiQuery("");
+    setTimeout(() => {
+      const response = getMessAiResponse(userMessage, unifiedMeals, specialNote, feedbacks.length);
+      setAiChat((prev) => [...prev, { sender: "ai", text: response }]);
+    }, 300);
   };
 
   const handleSaveSupervisor = async () => {
@@ -380,6 +488,25 @@ export default function AdminMessScreen() {
         createdAt: serverTimestamp(),
       });
 
+      // Notify the student about admin response
+      const fbAny = replyingFeedback as any;
+      const studentRecipient =
+        fbAny.studentEmail ||
+        fbAny.userEmail ||
+        fbAny.studentId ||
+        fbAny.userId;
+      if (studentRecipient) {
+        try {
+          await notifyStudent(
+            studentRecipient,
+            `🍽️ Mess Feedback Response`,
+            `Administration replied to your dining feedback: "${cleanText}"`,
+            "mess",
+            { feedbackId: replyingFeedback.id }
+          );
+        } catch (_) {}
+      }
+
       setReplyModalVisible(false);
       setReplyingFeedback(null);
       setAdminReplyText("");
@@ -466,55 +593,136 @@ export default function AdminMessScreen() {
                 </View>
 
                 <Text style={[styles.heroTitle, { color: colors.adminText }]}>Campus Mess & Catering</Text>
-                <Text style={[styles.heroSubtitle, { color: colors.adminTextSecondary }]}>Central Dining Hall • Fresh, Nutritious & Hygienic</Text>
+                <Text style={[styles.heroSubtitle, { color: colors.adminTextSecondary }]}>
+                  Central Dining Hall • Fresh, Nutritious & Hygienic
+                </Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.editMenuBtn}
-                onPress={() => setUpdateMenuModal(true)}
-              >
-                <Ionicons name="create-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.editMenuBtnText}>Edit Menu</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <View style={styles.managedByBadge}>
+                  <Ionicons name="lock-closed" size={12} color="#2563EB" />
+                  <Text style={styles.managedByText}>Managed by Mess Manager</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.suggestionBtn}
+                  onPress={() => setSuggestionModal(true)}
+                >
+                  <Ionicons name="bulb-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.actionBtnWhiteText}>Give Suggestion</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.takeActionBtn}
+                  onPress={() => setAdminActionModal(true)}
+                >
+                  <Ionicons name="flash-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.actionBtnWhiteText}>Take Action</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.aiAssistBtn}
+                  onPress={() => setAiModal(true)}
+                >
+                  <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+                  <Text style={styles.actionBtnWhiteText}>Mess AI</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* 3 MEAL CARDS ROW */}
+            {/* SPECIAL NOTE BANNER (POSTED BY MESS MANAGER) */}
+            <View
+              style={[
+                styles.specialNoteCard,
+                {
+                  backgroundColor: isDark ? "rgba(245,158,11,0.12)" : "#FFFBEB",
+                  borderColor: isDark ? "rgba(245,158,11,0.28)" : "#FDE68A",
+                },
+              ]}
+            >
+              <View style={styles.specialNoteIconCircle}>
+                <Ionicons name="sparkles" size={18} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                  <Text style={[styles.specialNoteLabel, { color: isDark ? "#FBBF24" : "#B45309" }]}>
+                    ⭐ TODAY'S SPECIAL NOTE (BY MESS MANAGER)
+                  </Text>
+                  <Text style={{ fontSize: 11, color: isDark ? "#FDE68A" : "#92400E" }}>
+                    {specialNote?.updatedAt ? `Updated: ${specialNote.updatedAt}` : "Active"}
+                  </Text>
+                </View>
+                <Text style={[styles.specialNoteBody, { color: isDark ? "#FEF3C7" : "#78350F" }]}>
+                  {specialNote?.text || "No special note set for today by Mess Manager."}
+                </Text>
+              </View>
+            </View>
+
+            {/* 4 MEAL CARDS ROW (LIVE FROM MESS MANAGER) */}
             <View style={styles.mealGrid}>
-              {/* Breakfast */}
-              <View style={[styles.mealCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
-                <View style={[styles.mealIconCircle, { backgroundColor: isDark ? "rgba(234,88,12,0.2)" : "#FFF7ED" }]}>
-                  <Ionicons name="sunny" size={18} color="#EA580C" />
-                </View>
-                <Text style={[styles.mealTitle, { color: colors.adminText }]}>Breakfast</Text>
-                <Text style={[styles.mealItems, { color: colors.adminTextSecondary }]}>{breakfast}</Text>
-                <View style={[styles.mealTimeBadge, { backgroundColor: colors.adminSurfaceAlt }]}>
-                  <Text style={[styles.mealTimeText, { color: colors.adminTextSecondary }]}>8:00 AM - 9:30 AM</Text>
-                </View>
-              </View>
+              {unifiedMeals.map((meal) => {
+                const iconName =
+                  meal.type === "Breakfast"
+                    ? "sunny"
+                    : meal.type === "Lunch"
+                    ? "restaurant"
+                    : meal.type === "Snacks"
+                    ? "cafe"
+                    : "moon";
+                const iconColor =
+                  meal.type === "Breakfast"
+                    ? "#EA580C"
+                    : meal.type === "Lunch"
+                    ? "#10B981"
+                    : meal.type === "Snacks"
+                    ? "#D97706"
+                    : "#2563EB";
 
-              {/* Lunch */}
-              <View style={[styles.mealCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
-                <View style={[styles.mealIconCircle, { backgroundColor: isDark ? "rgba(16,185,129,0.2)" : "#ECFDF5" }]}>
-                  <Ionicons name="restaurant" size={18} color="#10B981" />
-                </View>
-                <Text style={[styles.mealTitle, { color: colors.adminText }]}>Lunch</Text>
-                <Text style={[styles.mealItems, { color: colors.adminTextSecondary }]}>{lunch}</Text>
-                <View style={[styles.mealTimeBadge, { backgroundColor: colors.adminSurfaceAlt }]}>
-                  <Text style={[styles.mealTimeText, { color: colors.adminTextSecondary }]}>12:30 PM - 2:00 PM</Text>
-                </View>
-              </View>
+                return (
+                  <View
+                    key={meal.id}
+                    style={[
+                      styles.mealCard,
+                      { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder },
+                    ]}
+                  >
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 8 }}>
+                      <View
+                        style={[
+                          styles.mealIconCircle,
+                          {
+                            backgroundColor: isDark
+                              ? "rgba(255,255,255,0.06)"
+                              : `${iconColor}15`,
+                          },
+                        ]}
+                      >
+                        <Ionicons name={iconName} size={18} color={iconColor} />
+                      </View>
 
-              {/* Dinner */}
-              <View style={[styles.mealCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
-                <View style={[styles.mealIconCircle, { backgroundColor: isDark ? "rgba(37,99,235,0.2)" : "#EFF6FF" }]}>
-                  <Ionicons name="moon" size={18} color="#2563EB" />
-                </View>
-                <Text style={[styles.mealTitle, { color: colors.adminText }]}>Dinner</Text>
-                <Text style={[styles.mealItems, { color: colors.adminTextSecondary }]}>{dinner}</Text>
-                <View style={[styles.mealTimeBadge, { backgroundColor: colors.adminSurfaceAlt }]}>
-                  <Text style={[styles.mealTimeText, { color: colors.adminTextSecondary }]}>7:30 PM - 9:00 PM</Text>
-                </View>
-              </View>
+                      {/* Live Take Food Headcount */}
+                      <View style={styles.adminTakesBadge}>
+                        <Ionicons name="restaurant" size={11} color="#059669" />
+                        <Text style={styles.adminTakesBadgeText}>
+                          {meal.takesCount || 0} Taking
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.mealTitle, { color: colors.adminText }]}>{meal.type}</Text>
+                    <Text style={[styles.mealItems, { color: colors.adminTextSecondary }]} numberOfLines={2}>
+                      {meal.items}
+                    </Text>
+
+                    <View style={[styles.mealTimeBadge, { backgroundColor: colors.adminSurfaceAlt }]}>
+                      <Ionicons name="time-outline" size={11} color={colors.adminTextSecondary} style={{ marginRight: 4 }} />
+                      <Text style={[styles.mealTimeText, { color: colors.adminTextSecondary }]}>
+                        {meal.timing}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
 
             {/* MESS SUPERVISOR & CATERING STAFF (EDITABLE) */}
@@ -737,6 +945,27 @@ export default function AdminMessScreen() {
                           </View>
                         ) : null}
 
+                        {/* Admin Action Note Box if present */}
+                        {fb.adminActionNote ? (
+                          <View
+                            style={[
+                              styles.adminActionNoteBox,
+                              {
+                                backgroundColor: isDark ? "rgba(124,58,237,0.15)" : "#FAF5FF",
+                                borderColor: isDark ? "rgba(124,58,237,0.3)" : "#E9D5FF",
+                              },
+                            ]}
+                          >
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                              <Ionicons name="flash" size={12} color="#7C3AED" />
+                              <Text style={styles.adminActionNoteTitle}>Admin Action Dispatched</Text>
+                            </View>
+                            <Text style={[styles.adminActionNoteText, { color: colors.adminText }]}>
+                              {fb.adminActionNote}
+                            </Text>
+                          </View>
+                        ) : null}
+
                         {/* Footer / Actions Row */}
                         <View style={styles.fbFooterRow}>
                           <TouchableOpacity
@@ -758,7 +987,24 @@ export default function AdminMessScreen() {
                             </Text>
                           </TouchableOpacity>
 
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {/* Take Action on this Feedback Button */}
+                            <TouchableOpacity
+                              style={[
+                                styles.takeFeedbackActionBtn,
+                                {
+                                  backgroundColor: isDark ? "rgba(124,58,237,0.2)" : "#F3E8FF",
+                                  borderColor: isDark ? "#6D28D9" : "#DDD6FE",
+                                },
+                              ]}
+                              onPress={() => handleOpenFeedbackActionModal(fb)}
+                            >
+                              <Ionicons name="flash-outline" size={12} color="#7C3AED" />
+                              <Text style={[styles.takeFeedbackActionBtnText, { color: "#7C3AED" }]}>
+                                {fb.adminActionNote ? "Edit Action" : "Take Action"}
+                              </Text>
+                            </TouchableOpacity>
+
                             <TouchableOpacity
                               style={[
                                 styles.replyActionBtn,
@@ -802,37 +1048,49 @@ export default function AdminMessScreen() {
         </View>
       </View>
 
-      {/* EDIT MENU MODAL */}
-      <Modal visible={updateMenuModal} transparent animationType="fade" onRequestClose={() => setUpdateMenuModal(false)}>
+      {/* GIVE SUGGESTION MODAL (ADMIN -> MESS MANAGER) */}
+      <Modal visible={suggestionModal} transparent animationType="fade" onRequestClose={() => setSuggestionModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.adminText }]}>Update Today's Mess Menu</Text>
-              <TouchableOpacity onPress={() => setUpdateMenuModal(false)}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.adminText }]}>Give Suggestion to Mess Manager</Text>
+                <Text style={[styles.modalSubtitleSmall, { color: colors.adminTextSecondary }]}>
+                  Mess menu is managed by Mess Manager. Your suggestions will be routed to their live dashboard.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSuggestionModal(false)}>
                 <Ionicons name="close" size={24} color={colors.adminTextSecondary} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Breakfast Items</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: colors.adminInputBg,
-                    borderColor: colors.adminInputBorder,
-                    color: colors.adminText,
-                  },
-                ]}
-                placeholderTextColor={colors.adminTextSecondary}
-                value={breakfast}
-                onChangeText={setBreakfast}
-                placeholder="e.g. Idli, Vada, Chutney, Coffee"
-              />
+            <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Target Meal</Text>
+            <View style={styles.filterPillsRow}>
+              {["General", "Breakfast", "Lunch", "Snacks", "Dinner"].map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  style={[
+                    styles.filterPill,
+                    {
+                      backgroundColor: suggestionMeal === m ? "#5D3EBC" : colors.adminSurfaceAlt,
+                    },
+                  ]}
+                  onPress={() => setSuggestionMeal(m)}
+                >
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      { color: suggestionMeal === m ? "#FFFFFF" : colors.adminTextSecondary },
+                    ]}
+                  >
+                    {m}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Lunch Items</Text>
+              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Recommendation / Suggestion *</Text>
               <TextInput
                 style={[
                   styles.modalInput,
@@ -840,45 +1098,270 @@ export default function AdminMessScreen() {
                     backgroundColor: colors.adminInputBg,
                     borderColor: colors.adminInputBorder,
                     color: colors.adminText,
+                    height: 80,
                   },
                 ]}
                 placeholderTextColor={colors.adminTextSecondary}
-                value={lunch}
-                onChangeText={setLunch}
-                placeholder="e.g. Steamed Rice, Dal Tadka, Paneer, Curd"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Dinner Items</Text>
-              <TextInput
-                style={[
-                  styles.modalInput,
-                  {
-                    backgroundColor: colors.adminInputBg,
-                    borderColor: colors.adminInputBorder,
-                    color: colors.adminText,
-                  },
-                ]}
-                placeholderTextColor={colors.adminTextSecondary}
-                value={dinner}
-                onChangeText={setDinner}
-                placeholder="e.g. Butter Roti, Dal Fry, Jeera Rice, Gulab Jamun"
+                value={suggestionText}
+                onChangeText={setSuggestionText}
+                placeholder="e.g. Please add fresh fruit salad to breakfast and decrease oil in evening snacks..."
+                multiline
               />
             </View>
 
             <View style={[styles.modalFooter, { borderTopColor: colors.adminCardBorder }]}>
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { backgroundColor: colors.adminSurfaceAlt }]}
-                onPress={() => setUpdateMenuModal(false)}
+                onPress={() => setSuggestionModal(false)}
               >
                 <Text style={[styles.modalCancelText, { color: colors.adminTextSecondary }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalSubmitBtn}
-                onPress={handleSaveMenu}
+                style={[styles.modalSubmitBtn, { backgroundColor: "#7C3AED" }]}
+                onPress={handleSendAdminSuggestion}
+                disabled={sendingSuggestion}
               >
-                <Text style={styles.modalSubmitText}>Save Menu</Text>
+                <Text style={styles.modalSubmitText}>
+                  {sendingSuggestion ? "Sending..." : "Submit Suggestion"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* TAKE OPERATIONAL ACTION MODAL */}
+      <Modal visible={adminActionModal} transparent animationType="fade" onRequestClose={() => setAdminActionModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.adminText }]}>Dispatch Administrative Action</Text>
+                <Text style={[styles.modalSubtitleSmall, { color: colors.adminTextSecondary }]}>
+                  Issue binding administrative directives to Mess Manager & Kitchen Staff
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setAdminActionModal(false)}>
+                <Ionicons name="close" size={24} color={colors.adminTextSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Action Type</Text>
+            <View style={styles.filterPillsRow}>
+              {(["Request Revision", "Order Inspection", "Issue Quality Warning", "Approve Menu"] as const).map(
+                (act) => (
+                  <TouchableOpacity
+                    key={act}
+                    style={[
+                      styles.filterPill,
+                      {
+                        backgroundColor: adminActionType === act ? "#EA580C" : colors.adminSurfaceAlt,
+                      },
+                    ]}
+                    onPress={() => setAdminActionType(act)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterPillText,
+                        { color: adminActionType === act ? "#FFFFFF" : colors.adminTextSecondary },
+                      ]}
+                    >
+                      {act}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Administrative Directive Details *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.adminInputBg,
+                    borderColor: colors.adminInputBorder,
+                    color: colors.adminText,
+                    height: 80,
+                  },
+                ]}
+                placeholderTextColor={colors.adminTextSecondary}
+                value={adminActionNote}
+                onChangeText={setAdminActionNote}
+                placeholder="e.g. Health inspector appointed for tomorrow 10 AM. Revise oil quality immediately."
+                multiline
+              />
+            </View>
+
+            <View style={[styles.modalFooter, { borderTopColor: colors.adminCardBorder }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { backgroundColor: colors.adminSurfaceAlt }]}
+                onPress={() => setAdminActionModal(false)}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.adminTextSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: "#EA580C" }]}
+                onPress={handleTakeAdminAction}
+                disabled={takingAction}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {takingAction ? "Dispatching..." : "Dispatch Action"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ACTION ON FEEDBACK MODAL */}
+      <Modal visible={feedbackActionModal} transparent animationType="fade" onRequestClose={() => setFeedbackActionModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.adminText }]}>Take Action on Feedback</Text>
+                <Text style={[styles.modalSubtitleSmall, { color: colors.adminTextSecondary }]}>
+                  Record administrative decision or remediation for this review
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setFeedbackActionModal(false)}>
+                <Ionicons name="close" size={24} color={colors.adminTextSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {feedbackForAction && (
+              <View style={[styles.originalFeedbackBox, { backgroundColor: colors.adminSurfaceAlt, borderColor: colors.adminCardBorder }]}>
+                <Text style={[styles.origStudentName, { color: colors.adminText }]}>
+                  {feedbackForAction.userName || feedbackForAction.studentName} ({feedbackForAction.meal}):
+                </Text>
+                <Text style={[styles.origCommentText, { color: colors.adminTextSecondary }]}>
+                  "{feedbackForAction.comment || feedbackForAction.feedback}"
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.adminTextSecondary }]}>Action Description *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.adminInputBg,
+                    borderColor: colors.adminInputBorder,
+                    color: colors.adminText,
+                    height: 75,
+                  },
+                ]}
+                placeholderTextColor={colors.adminTextSecondary}
+                value={feedbackActionNoteInput}
+                onChangeText={setFeedbackActionNoteInput}
+                placeholder="e.g. Kitchen supervisor notified; supplier changed for dairy products."
+                multiline
+              />
+            </View>
+
+            <View style={[styles.modalFooter, { borderTopColor: colors.adminCardBorder }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { backgroundColor: colors.adminSurfaceAlt }]}
+                onPress={() => setFeedbackActionModal(false)}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.adminTextSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: "#059669" }]}
+                onPress={handleSaveFeedbackAction}
+                disabled={savingFeedbackAction}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {savingFeedbackAction ? "Saving..." : "Record Action"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MESS AI ASSISTANT MODAL (ADMIN) */}
+      <Modal visible={aiModal} transparent animationType="fade" onRequestClose={() => setAiModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.adminCard, borderColor: colors.adminCardBorder, maxWidth: 540 }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: colors.adminText }]}>Mess AI Assistant</Text>
+                  <Text style={[styles.modalSubtitleSmall, { color: colors.adminTextSecondary }]}>
+                    Insights, nutrition, headcount forecasts & feedback metrics
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setAiModal(false)}>
+                <Ionicons name="close" size={24} color={colors.adminTextSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick chips */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+              {["Today's schedule", "Take Food opt-ins", "Special note", "Feedback overview"].map((chip) => (
+                <TouchableOpacity
+                  key={chip}
+                  style={[styles.quickChip, { backgroundColor: colors.adminSurfaceAlt, borderColor: colors.adminCardBorder }]}
+                  onPress={() => handleSendAiQuery(chip)}
+                >
+                  <Text style={[styles.quickChipText, { color: "#7C3AED" }]}>{chip}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Chat Body */}
+            <ScrollView style={{ maxHeight: 260, backgroundColor: colors.adminSurfaceAlt, borderRadius: 10, padding: 10, marginBottom: 12 }}>
+              {aiChat.map((m, idx) => (
+                <View
+                  key={idx}
+                  style={{
+                    alignSelf: m.sender === "user" ? "flex-end" : "flex-start",
+                    backgroundColor: m.sender === "user" ? "#5D3EBC" : colors.adminCard,
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    maxWidth: "85%",
+                    borderWidth: m.sender === "user" ? 0 : 1,
+                    borderColor: colors.adminCardBorder,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, lineHeight: 18, color: m.sender === "user" ? "#FFFFFF" : colors.adminText }}>
+                    {m.text}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Input Row */}
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    flex: 1,
+                    backgroundColor: colors.adminInputBg,
+                    borderColor: colors.adminInputBorder,
+                    color: colors.adminText,
+                  },
+                ]}
+                placeholderTextColor={colors.adminTextSecondary}
+                value={aiQuery}
+                onChangeText={setAiQuery}
+                placeholder="Ask Mess AI about dishes, headcounts, feedback..."
+                onSubmitEditing={() => handleSendAiQuery()}
+              />
+              <TouchableOpacity
+                style={{ backgroundColor: "#7C3AED", width: 42, height: 42, borderRadius: 8, alignItems: "center", justifyContent: "center" }}
+                onPress={() => handleSendAiQuery()}
+              >
+                <Ionicons name="send" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -1988,5 +2471,126 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: "center",
     paddingHorizontal: 10,
+  },
+  // Managed by Mess Manager & Admin Action Styles
+  managedByBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  managedByText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  suggestionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  takeActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#EA580C",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  aiAssistBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#4F46E5",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  actionBtnWhiteText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  // Special Note
+  specialNoteCard: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+    marginBottom: 16,
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  specialNoteIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  specialNoteLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  specialNoteBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  adminTakesBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminTakesBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  adminActionNoteBox: {
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  adminActionNoteTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#7C3AED",
+  },
+  adminActionNoteText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  takeFeedbackActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  takeFeedbackActionBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

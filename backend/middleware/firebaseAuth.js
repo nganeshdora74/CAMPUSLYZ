@@ -37,7 +37,13 @@ const firebaseAuth = async (req, res, next) => {
       let department = "";
       let semester = null;
       let section = "";
-      let rollNumber = "";
+      let role = "student";
+      if (email.includes("admin")) role = "admin";
+      else if (email.includes("teacher") || email.includes("faculty")) role = "teacher";
+      else if (email.includes("hostel")) role = "hostel_manager";
+      else if (email.includes("mess")) role = "mess_manager";
+      else if (email.includes("fee")) role = "fee_manager";
+      else if (email.includes("notice")) role = "notice_manager";
 
       try {
         if (admin.apps.length) {
@@ -50,6 +56,8 @@ const firebaseAuth = async (req, res, next) => {
           if (firestoreDoc.exists) {
             const data = firestoreDoc.data();
             if (data.fullName) name = data.fullName;
+            if (data.role) role = data.role;
+            else if (data.isTeacher) role = "teacher";
             if (data.department) department = data.department;
             if (data.semester) semester = Number(data.semester) || null;
             if (data.section) section = data.section;
@@ -65,14 +73,32 @@ const firebaseAuth = async (req, res, next) => {
         name,
         email,
         password: "firebase-managed-account",
-        role: "student",
+        role,
         department,
         semester,
         section,
         rollNumber,
       });
 
-      console.log(`Auto-created MongoDB student profile for ${email}`);
+      console.log(`Auto-created MongoDB ${role} profile for ${email}`);
+    } else {
+      // Sync role if updated in Firestore
+      try {
+        if (admin.apps.length) {
+          const firestoreDoc = await admin
+            .firestore()
+            .collection("users")
+            .doc(decoded.uid)
+            .get();
+          if (firestoreDoc.exists) {
+            const data = firestoreDoc.data();
+            if (data.role && data.role !== mongoUser.role) {
+              mongoUser.role = data.role;
+              await mongoUser.save();
+            }
+          }
+        }
+      } catch (_) {}
     }
 
     req.user = {

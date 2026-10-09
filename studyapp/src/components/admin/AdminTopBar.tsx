@@ -9,8 +9,11 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { auth } from "../../firebase/config";
 import { useAppTheme } from "../../context/ThemeContext";
 import AdminThemeToggle from "./AdminThemeToggle";
+import UniversalRoleControls from "../UniversalRoleControls";
+import { parseNameAndRoleFromEmail } from "../../utils/userEmailParser";
 
 export interface AdminTopBarProps {
   title?: string;
@@ -33,11 +36,15 @@ export default function AdminTopBar({
   onOpenMobileMenu,
   rightActions,
   showSearch = false,
-  adminName = "Admin",
+  adminName,
 }: AdminTopBarProps) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const { colors, isDark } = useAppTheme();
+
+  const currentUser = auth.currentUser;
+  const parsed = parseNameAndRoleFromEmail(currentUser?.email);
+  const resolvedAdminName = adminName || currentUser?.displayName || parsed.fullName || "Admin";
 
   return (
     <View
@@ -121,7 +128,7 @@ export default function AdminTopBar({
       <View style={styles.topRightRow}>
         {rightActions}
 
-        <AdminThemeToggle />
+        <UniversalRoleControls compact />
 
         <TouchableOpacity
           style={[
@@ -162,7 +169,7 @@ export default function AdminTopBar({
                 { color: isDark ? "#E9D5FF" : "#6B21A8" },
               ]}
             >
-              {adminName}
+              {resolvedAdminName}
             </Text>
           )}
         </TouchableOpacity>
@@ -173,58 +180,58 @@ export default function AdminTopBar({
 
 const styles = StyleSheet.create({
   topBar: {
-    height: 64,
+    height: 50,
     borderBottomWidth: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     zIndex: 10,
   },
   menuHamburger: {
-    padding: 6,
-    marginRight: 10,
+    padding: 4,
+    marginRight: 6,
   },
   titleCol: {
     flex: 1,
     justifyContent: "center",
   },
   pageTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "800",
     letterSpacing: -0.2,
   },
   pageSubtitle: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: "500",
     marginTop: 1,
   },
   searchBar: {
     flex: 1,
-    maxWidth: 420,
-    height: 40,
-    borderRadius: 10,
+    maxWidth: 280,
+    height: 34,
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    marginRight: 16,
+    paddingHorizontal: 10,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
-    fontSize: 13.5,
+    marginLeft: 6,
+    fontSize: 12.5,
     height: "100%",
   },
   topRightRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 6,
   },
   bellBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -232,22 +239,22 @@ const styles = StyleSheet.create({
   adminBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
   },
   adminAvatarSmall: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#7C3AED",
     alignItems: "center",
     justifyContent: "center",
   },
   adminBadgeText: {
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: "700",
   },
 });

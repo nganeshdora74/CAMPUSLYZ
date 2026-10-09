@@ -12,10 +12,15 @@ export default function TabLayout() {
   const { t, languageCode } = useLanguage();
 
   useEffect(() => {
+    let isInitialized = false;
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        router.replace("/login");
+        // If there's no cached user and Firebase has finished initial check
+        if (isInitialized && !auth.currentUser) {
+          router.replace("/login");
+        }
       }
+      isInitialized = true;
     });
 
     return () => unsubscribe();

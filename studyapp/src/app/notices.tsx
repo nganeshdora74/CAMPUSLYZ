@@ -35,6 +35,7 @@ import { auth, db } from "../firebase/config";
 import { useAppTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import LanguageToggle from "../components/LanguageToggle";
+import UniversalRoleControls from "../components/UniversalRoleControls";
 import OfflineBanner from "../components/OfflineBanner";
 import {
   connectStudentToTeacher,
@@ -309,7 +310,7 @@ export default function NoticesScreen() {
           </Text>
         </View>
 
-        <LanguageToggle />
+        <UniversalRoleControls compact />
       </View>
 
       <OfflineBanner />

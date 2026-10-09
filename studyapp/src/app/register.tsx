@@ -13,10 +13,21 @@ import {
   Image,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 
 import { auth, db } from "../firebase/config";
+import { getApiUrl } from "../api";
+import { parseNameAndRoleFromEmail } from "../utils/userEmailParser";
+
+type AppRole =
+  | "student"
+  | "teacher"
+  | "fee_manager"
+  | "hostel_manager"
+  | "mess_manager"
+  | "notice_manager"
+  | "admin";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -24,17 +35,18 @@ export default function RegisterScreen() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"student" | "teacher">("student");
+  const [role, setRole] = useState<AppRole>("student");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    const name = fullName.trim();
     const userEmail = email.trim().toLowerCase();
+    const parsed = parseNameAndRoleFromEmail(userEmail);
+    const name = fullName.trim() || parsed.fullName;
 
-    if (!name || !userEmail || !password) {
+    if (!userEmail || !password) {
       Alert.alert(
         "Missing information",
-        "Please enter your full name, email, and password."
+        "Please enter your unique ID (e.g. name.role@gmail.com) and password."
       );
       return;
     }
@@ -50,6 +62,7 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
+      // 1. Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         userEmail,
@@ -58,33 +71,88 @@ export default function RegisterScreen() {
 
       const user = userCredential.user;
 
-      const assignedRole = userEmail.includes("admin")
-        ? "admin"
-        : role === "teacher" || userEmail.includes("teacher") || userEmail.includes("faculty")
-        ? "teacher"
-        : "student";
+      const assignedRole: AppRole =
+        parsed.role && parsed.role !== "student"
+          ? (parsed.role as AppRole)
+          : role;
 
-      await setDoc(doc(db, "users", user.uid), {
+      // Update Firebase Auth user displayName
+      try {
+        await updateProfile(user, { displayName: name });
+      } catch (_) {}
+
+      // 2. Save user profile in Firebase Firestore
+      const regDocData: Record<string, any> = {
         uid: user.uid,
         fullName: name,
         email: userEmail,
         role: assignedRole,
         isTeacher: assignedRole === "teacher",
-        teacherId: assignedRole === "teacher" ? `TEACH-${user.uid.slice(0, 5).toUpperCase()}` : undefined,
+        isBlocked: false,
+        status: "active",
         createdAt: new Date().toISOString(),
-      });
+        updatedAt: new Date().toISOString(),
+      };
+      if (assignedRole === "teacher") {
+        regDocData.teacherId = `TEACH-${user.uid.slice(0, 5).toUpperCase()}`;
+      }
+      await setDoc(doc(db, "users", user.uid), regDocData);
+
+      // 3. Store user in MongoDB database
+      try {
+        const baseUrl = getApiUrl();
+        await fetch(`${baseUrl}/api/auth/sync`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email: userEmail,
+            role: assignedRole,
+            firebaseUid: user.uid,
+          }),
+        });
+      } catch (mongoErr: any) {
+        console.warn("MongoDB user sync notice:", mongoErr?.message);
+      }
+
+      const roleLabels: Record<AppRole, string> = {
+        student: "Student Dashboard",
+        teacher: "Teacher Portal",
+        fee_manager: "Fees Manager Portal",
+        hostel_manager: "Hostel Manager Portal",
+        mess_manager: "Mess Manager Portal",
+        notice_manager: "Notice Manager Portal",
+        admin: "Admin Control Center",
+      };
 
       Alert.alert(
-        "Account created",
-        `Welcome to Campusly, ${name}! (${assignedRole === "teacher" ? "Teacher Portal" : "Student Dashboard"})`,
+        "Account Created! 🎉",
+        `Welcome to Campusly, ${name}! Your account is active with Firebase Auth & MongoDB database. (${roleLabels[assignedRole]})`,
         [
           {
             text: "Continue",
             onPress: () => {
-              if (assignedRole === "teacher" || assignedRole === "admin") {
-                router.replace("/admin/attendence");
+              if (assignedRole === "teacher") {
+                router.replace("/teacher" as any);
+              } else if (assignedRole === "fee_manager") {
+                router.replace("/fee-manager" as any);
+              } else if (assignedRole === "hostel_manager") {
+                router.replace("/hostel-manager" as any);
+              } else if (assignedRole === "mess_manager") {
+                router.replace("/mess-manager" as any);
+              } else if (assignedRole === "notice_manager") {
+                router.replace("/notice-manager" as any);
+              } else if (assignedRole === "admin") {
+                router.replace("/admin" as any);
               } else {
-                router.replace("/(tab)/home");
+                try {
+                  router.replace("/(tab)/home" as any);
+                } catch {
+                  router.replace("/home" as any);
+                }
               }
             },
           },
@@ -151,7 +219,7 @@ export default function RegisterScreen() {
             Join your campus community.
           </Text>
 
-          <Text style={styles.label}>I am a:</Text>
+          <Text style={styles.label}>Select Role:</Text>
           <View style={styles.roleSelectorRow}>
             <TouchableOpacity
               style={[
@@ -185,7 +253,97 @@ export default function RegisterScreen() {
                   role === "teacher" && styles.roleBtnTextActive,
                 ]}
               >
-                👨‍🏫 Teacher / Faculty
+                👨‍🏫 Teacher
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.roleBtn,
+                role === "fee_manager" && styles.roleBtnActive,
+              ]}
+              onPress={() => setRole("fee_manager")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.roleBtnText,
+                  role === "fee_manager" && styles.roleBtnTextActive,
+                ]}
+              >
+                💰 Fees Manager
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.roleBtn,
+                role === "hostel_manager" && styles.roleBtnActive,
+              ]}
+              onPress={() => setRole("hostel_manager")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.roleBtnText,
+                  role === "hostel_manager" && styles.roleBtnTextActive,
+                ]}
+              >
+                🏨 Hostel Manager
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.roleBtn,
+                role === "mess_manager" && styles.roleBtnActive,
+              ]}
+              onPress={() => setRole("mess_manager")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.roleBtnText,
+                  role === "mess_manager" && styles.roleBtnTextActive,
+                ]}
+              >
+                🍽️ Mess Manager
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.roleBtn,
+                role === "notice_manager" && styles.roleBtnActive,
+              ]}
+              onPress={() => setRole("notice_manager")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.roleBtnText,
+                  role === "notice_manager" && styles.roleBtnTextActive,
+                ]}
+              >
+                📢 Notice Manager
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.roleBtn,
+                role === "admin" && styles.roleBtnActive,
+              ]}
+              onPress={() => setRole("admin")}
+              disabled={loading}
+            >
+              <Text
+                style={[
+                  styles.roleBtnText,
+                  role === "admin" && styles.roleBtnTextActive,
+                ]}
+              >
+                🛡️ Admin
               </Text>
             </TouchableOpacity>
           </View>
@@ -203,19 +361,33 @@ export default function RegisterScreen() {
             editable={!loading}
           />
 
-          <Text style={styles.label}>Email</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <Text style={styles.label}>Unique Login ID</Text>
+            <Text style={{ fontSize: 11, color: "#6366F1", fontWeight: "700" }}>Format: name.role@gmail.com</Text>
+          </View>
 
           <TextInput
             style={styles.input}
-            placeholder="Enter your email"
+            placeholder="e.g. ganesh.student@gmail.com"
             placeholderTextColor="#9CA3AF"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(val) => {
+              setEmail(val);
+              if (!fullName.trim() && val.includes("@")) {
+                const p = parseNameAndRoleFromEmail(val);
+                if (p.fullName && p.fullName !== "User") {
+                  setFullName(p.fullName);
+                }
+              }
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             editable={!loading}
           />
+          <Text style={{ fontSize: 11, color: "#6B7280", marginTop: -6, marginBottom: 12 }}>
+            💡 The name from your ID (e.g. "ganesh") will automatically show in your profile & dashboard!
+          </Text>
 
           <Text style={styles.label}>Password</Text>
 
@@ -331,12 +503,13 @@ const styles = StyleSheet.create({
 
   roleSelectorRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
 
   roleBtn: {
-    flex: 1,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1.5,
